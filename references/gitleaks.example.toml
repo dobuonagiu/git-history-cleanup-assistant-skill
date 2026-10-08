@@ -1,0 +1,18 @@
+# Esempio di allowlist per gitleaks (falsi positivi: doc, esempi, fixture).
+# Uso: GITLEAKS_CONFIG=/percorso/gitleaks.toml scripts/scan-secrets.sh <repo> <label>
+# Attenzione: usare l'allowlist solo per falsi positivi verificati, mai per nascondere secret reali.
+title = "allowlist per bonifica"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Falsi positivi verificati"
+paths = [
+  '''docs/.*\.md''',
+  '''tests?/fixtures/.*''',
+]
+regexes = [
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''(?i)example[_-]?(token|key|secret)''',
+]

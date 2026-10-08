@@ -14,6 +14,7 @@ while [ $# -gt 0 ]; do
     --paths) PATHS="$2"; shift 2;;
     --replace) REPL="$2"; shift 2;;
     --approval) APPROVAL="$2"; shift 2;;
+    --no-message-rewrite) REPLACE_MESSAGES=0; shift;;
     *) die "Opzione sconosciuta: $1";;
   esac
 done

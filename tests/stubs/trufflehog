@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Stub di trufflehog per i test: nessun finding.
+[ "${1:-}" = --version ] && { echo "trufflehog stub"; exit 0; }
+exit 0

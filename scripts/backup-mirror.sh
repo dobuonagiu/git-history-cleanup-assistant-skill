@@ -46,6 +46,8 @@ if [ -n "$others" ]; then
 fi
 state_set MIRROR_DIR "$MIRROR"; state_set BACKUP_URL "$BKP"; state_set SOURCE_URL "$SRC"
 state_set BRANCH_COUNT "$heads"; state_set TAG_COUNT "$tags"
+info "Snapshot dei ref remoti (preimage per il push con lease)"
+"$(dirname "$0")/snapshot-remote.sh" "$SRC"
 
 if [ "$CONFIRM" -ne 1 ]; then
   warn "Push sul backup NON eseguito (manca --confirm). Chiedi conferma all'utente e rilancia con --confirm."

@@ -1,0 +1,15 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y git-filter-repo jq
+      - name: Syntax check
+        run: for f in scripts/*.sh tests/run-tests.sh install.sh; do bash -n "$f"; done
+      - name: End-to-end tests
+        run: tests/run-tests.sh

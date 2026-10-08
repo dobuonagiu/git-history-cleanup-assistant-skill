@@ -49,12 +49,28 @@ La skill verifica la presenza di questi tool e, se mancano, **propone** l'instal
 | git-filter-repo | `sudo apt install git-filter-repo` oppure `pip install git-filter-repo` |
 | gitleaks (>= 8.19) | `brew install gitleaks` oppure release ufficiale |
 | trufflehog | `brew install trufflehog` oppure [installer ufficiale](https://github.com/trufflesecurity/trufflehog) |
-| jq, python3 | `sudo apt install jq python3` |
+| jq, python3, curl | `sudo apt install jq python3 curl` |
+| gh (opzionale) | [GitHub CLI](https://cli.github.com): controllo visibilità/fork prima del push |
+
+## Funzionalità di sicurezza
+- Backup mirror verificato + **preimage** dei ref remoti; il push usa `--force-with-lease` per ref (mai `--force` nudo).
+- Controllo **visibilità e fork** (`gh`); repo pubblico/con fork richiede consenso esplicito.
+- Riscrittura anche dei **messaggi di commit**; verifica su file e messaggi.
+- Doppio scanner (gitleaks + trufflehog) + **pattern custom** (`references/patterns.example`) + allowlist gitleaks.
+- **Revisione semantica AI** (`references/ai_semantic_review_prompt.md`) prima e dopo la riscrittura.
+- **Verifica anonima** post-push e report per **superfici di esposizione** (verificato / residuo / non verificato).
+
+## Test
+```bash
+tests/run-tests.sh   # richiede git, git-filter-repo, jq, python3, curl; nessuna rete
+```
+Eseguiti anche da GitHub Actions (`.github/workflows/test.yml`).
 
 ## Contenuto
 - `SKILL.md` — istruzioni e workflow (fasi 0–16, gate di approvazione)
 - `scripts/` — script helper (non distruttivi di default; rewrite e push richiedono la frase di approvazione)
-- `references/` — comandi, ricette `filter-repo`, protezioni per provider, template di report
+- `references/` — comandi, ricette `filter-repo`, protezioni per provider, prompt di revisione semantica, esempi di pattern/allowlist, template di report
+- `tests/` — test end-to-end con scanner finti
 - `install.sh` — installer
 
 ## Sicurezza

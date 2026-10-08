@@ -15,6 +15,18 @@
 Fonti dei numeri: `cleanup-reports/state.env`, `*-findings.tsv`, `verify-*.md`, `dryrun-*.txt`.
 I valori dei secret NON vanno riportati.
 
+## Superfici di esposizione (riportare ciascuna separatamente)
+| Superficie | Ispezionato | Esito | Residuo / non verificato |
+|------------|-------------|-------|--------------------------|
+| File correnti e testo ospitato (README, PR title/body) | | | |
+| Oggetti e ref Git (blob, messaggi di commit, branch, tag) | | | |
+| Cronologia modifiche body PR (revisioni) | | | |
+| Cache, PR refs (`refs/pull/*`), fork, cloni, CI log | | | |
+| Raggiungibilità anonima dei vecchi commit (`verify-anonymous.sh`) | | | |
+
+Un tip pulito non prova che l'ancestry sia pulita. Una superficie non ispezionata è *non verificata*, non *pulita*.
+Una riscrittura non è una cancellazione totale: fork, cloni e cache di terzi possono conservare i dati.
+
 ## Azioni manuali richieste
 - [ ] Riattivare le branch protection (stato originale annotato in Fase 4)
 - [ ] **Rigenerare tutte le credenziali esposte** (considerarle compromesse)

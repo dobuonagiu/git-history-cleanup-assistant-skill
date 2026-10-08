@@ -26,6 +26,11 @@ perdita dati. Ambiente tipico: WSL2 Linux. Comunica in italiano.
    in `./cleanup-reports/` (fuori dal repo bonificato) e non vanno mai committati.
 7. Lavora sempre su un clone/mirror di lavoro, **mai sul backup**. Il backup resta intatto.
 8. Se un gate non riceve conferma, o un prerequisito/permesso manca: **interrompi** e riferisci.
+9. **Ruota le credenziali live per prime** (o in parallelo): la bonifica non invalida un secret già esposto.
+10. Mai dedurre visibilità/fork dal nome o dall'URL: verificali (`check-visibility.sh`). Non dichiarare "pulito"
+    ciò che non hai verificato: distingui sempre **verificato / residuo / non verificato** per ogni superficie.
+11. Il push usa **lease per ref** (`--force-with-lease`), mai `--force` nudo né `--no-verify`. Se il lease è
+    rifiutato (il remoto è cambiato) **fermati**: rifare snapshot, analisi e approvazioni.
 
 Usa `ask_user` per ogni domanda/gate. Gli script in `scripts/` sono non distruttivi di default.
 Percorso script: la directory di questa skill (`SCRIPTS=<dir skill>/scripts`).
@@ -51,12 +56,18 @@ Se manca qualcosa **proponi** il comando di installazione (brew / apt / release 
 Verifica: clone/lettura sorgente (`git ls-remote`), creazione repo di backup, push, e possibilità di
 force push (provider/permessi: vedi references). Se i permessi sono insufficienti **interrompi**.
 Non eseguire force push di test sul sorgente reale.
+Esegui `scripts/check-visibility.sh <URL>` (GitHub, via `gh`): visibilità e numero di fork. Exit 10 = pubblico/con fork:
+informa l'utente dei rischi (fork e cloni conservano la vecchia history) e raccogli il suo consenso esplicito.
+Verifica la **proprietà** di fork/account prima di scegliere la via di remediation (self-service vs supporto provider):
+non fidarti di etichette in report precedenti.
 
 ### FASE 3 – Backup completo  (GATE: conferma utente)
 `scripts/backup-mirror.sh <SOURCE> <BACKUP> [--confirm]` → `git clone --mirror`, verifica branch/tag/refs,
 `git push --mirror` sul repo di backup (senza `--confirm` esegue solo il mirror locale e la verifica).
 Il repo di backup deve esistere vuoto e **privato**. Su GitHub/Azure DevOps i ref `refs/pull/*` non sono
 pushabili: lo script li esclude e lo segnala. Conferma all'utente il completamento con i conteggi.
+Lo script salva anche il **preimage** dei ref remoti (`remote-preimage.txt`, SHA di branch/tag) usato come lease al push:
+non ripeterlo dopo la riscrittura. URL con credenziali incorporate sono rifiutati (usa il credential helper).
 
 ### FASE 4 – Analisi protezioni
 Verifica protected branches, push restrictions, required approvals, PR checks (references/branch-protection.md).
@@ -65,6 +76,16 @@ Se presenti: **fermati** e chiedi di rimuoverle temporaneamente. Non procedere f
 ### FASE 5 – Secret Discovery
 `scripts/scan-secrets.sh <repo> <label>` esegue `gitleaks git` e `trufflehog git file://<repo>` con report JSON.
 `scripts/summarize-findings.sh <repo> <label>` produce tabella: tipo, file, commit, autore, gravità, branch coinvolti (valori mascherati).
+`scripts/scan-patterns.sh <repo> <label> [--patterns-file F]` cerca contesto privato che gitleaks non copre
+(IP privati, chiavi PEM, + regole utente: domini interni, PII; vedi `references/patterns.example`). Mostra solo
+posizioni, mai i valori. Falsi positivi gitleaks: `GITLEAKS_CONFIG=<toml>` (vedi `references/gitleaks.example.toml`),
+solo dopo verifica manuale.
+
+### FASE 5b – Revisione semantica (Layer 4)
+Le regex non vedono nomi reali, codename, trascrizioni, topologie interne, PII in fixture. Esegui
+`scripts/semantic-review-inventory.sh <repo> <label>` (congela ref e file) e applica
+`references/ai_semantic_review_prompt.md` **anche al materiale senza hit**. Registra risultati e copertura fuori
+dal repo; ciò che non ispezioni è *non verificato*, non *pulito*. Nuovi valori/path → regole (Fase 7), poi dry-run.
 
 ### FASE 6 – Classification
 Mostra secret, file, branch. Per **ogni** elemento chiedi l'azione:
@@ -97,25 +118,36 @@ Solo dopo passa la frase a `rewrite.sh --approval`. Non pre-compilare mai la fra
 — rifiuta di girare senza frase esatta, senza dry-run o se le regole sono cambiate dopo il dry-run (hash).
 Clona un mirror **fresco** di lavoro (filter-repo lo richiede) e non modifica mai il backup.
 Esempi: `--invert-paths --paths-from-file`, `--replace-text`. Vedi ricette.
+Di default riscrive **anche i messaggi di commit** (`--replace-message` con lo stesso file di regole): un'entità
+sensibile può comparire nei messaggi. Disattivabile con `--no-message-rewrite` (da passare identico a dry-run e rewrite).
 
 ### FASE 12 – Pulizia
 `git reflog expire --expire=now --all` e `git gc --prune=now --aggressive` (eseguiti da `rewrite.sh`).
 
 ### FASE 13 – Verifica post cleanup
-`scripts/verify-final.sh <repo> post-cleanup --removed paths-to-remove.txt --replace replacements.txt --keep keep-list.txt --baseline <backup-mirror>`: rieseguire
-`gitleaks git` e `trufflehog git`, verificare che i secret siano spariti, i file rimossi assenti dalla
+`scripts/verify-final.sh <repo> post-cleanup --removed paths-to-remove.txt --replace replacements.txt --keep keep-list.txt --baseline <backup-mirror> [--patterns-file F]`: rieseguire
+`gitleaks git` e `trufflehog git` + pattern custom, verificare che i secret siano spariti (anche dai **messaggi di commit**), i file rimossi assenti dalla
 history, le esclusioni preservate. Genera report finale. Se restano finding: **non procedere al push**.
 
+### FASE 13b – Revisione semantica sui ref riscritti
+Ripeti la Fase 5b sui ref riscritti (stesso scope di lavoro) prima del push: pattern puliti non bastano.
+
 ### FASE 14 – Push  (GATE separato)
-Chiedi approvazione esplicita al force push mostrando il remote e i ref; l'utente deve scrivere `Confermo il force push`. Solo dopo:
-`scripts/push-cleaned.sh <work-dir> <REMOTE_URL> --approval "Confermo il force push"` (richiede verify post-cleanup OK;
-reimposta `origin` — filter-repo lo rimuove — ed esegue `git push origin --force --all` e `git push origin --force --tags`).
+Chiedi approvazione esplicita al force push mostrando remote, ref e l'esito di `check-visibility.sh`; l'utente deve scrivere `Confermo il force push`. Solo dopo:
+`scripts/push-cleaned.sh <work-dir> <REMOTE_URL> --approval "Confermo il force push" [--ack-exposure]`
+(richiede verify post-cleanup OK e il preimage della Fase 3 sullo **stesso URL**; `--ack-exposure` solo se l'utente ha
+accettato esplicitamente repo pubblico/con fork/visibilità non verificata). Reimposta `origin` (filter-repo lo rimuove)
+e pubblica branch e tag con `--force-with-lease=<ref>:<sha-preimage>` per ciascun ref: equivalente di
+`git push origin --force --all/--tags` ma rifiutato se il remoto è cambiato dopo lo snapshot. Nessun fallback a `--force`.
 Branch eliminati dalla riscrittura non vengono rimossi dal remoto: segnalalo e proponi cancellazione esplicita (con approvazione).
 
 ### FASE 15 – Verifica post push
-Nuovo clone fresco del remoto (`git clone <REPO>`), rieseguire `scripts/verify-final.sh <clone> post-push --removed ... --keep ... --baseline <backup-mirror>`. Il remoto
-deve risultare bonificato. Nota: su GitHub/GitLab i vecchi commit possono restare raggiungibili via SHA,
-cache e PR/fork finché non si contatta il supporto/gc.
+Nuovo clone fresco del remoto (`git clone <REPO>`), rieseguire `scripts/verify-final.sh <clone> post-push --removed ... --keep ... --baseline <backup-mirror>`.
+Poi `scripts/verify-anonymous.sh <REMOTE_URL>`: senza credenziali verifica se il repo è leggibile e se i vecchi commit
+sono ancora raggiungibili (HTTP 200/404). Su repo privati un 404 non prova nulla; un 200 è un'esposizione **residua**
+(cache, oggetti orfani, PR/fork), non un errore di bonifica. Riporta le superfici separatamente (vedi report-template):
+file correnti e testo ospitato · oggetti e ref Git · cronologia modifiche del body delle PR · cache/PR refs/fork/cloni.
+I fork di terzi e le copie esterne non sono rimovibili da noi: percorso supporto provider / cooperazione dei proprietari.
 
 ### FASE 16 – Checklist finale
 - Riattivare le branch protection.

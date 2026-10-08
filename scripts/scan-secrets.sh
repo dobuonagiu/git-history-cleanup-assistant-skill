@@ -15,7 +15,8 @@ status=0; gl_n="n/a"; th_n="n/a"
 
 if command -v gitleaks >/dev/null 2>&1; then
   info "gitleaks git ($label)"
-  gitleaks git --no-banner --redact --exit-code 0 --report-format json --report-path "$GL" "$repo" >/dev/null 2>"$REPORT_DIR/$label-gitleaks.log" \
+  gitleaks git --no-banner --redact --exit-code 0 --report-format json --report-path "$GL" \
+    ${GITLEAKS_CONFIG:+--config "$GITLEAKS_CONFIG"} "$repo" >/dev/null 2>"$REPORT_DIR/$label-gitleaks.log" \
     || { fail "gitleaks fallito (vedi $REPORT_DIR/$label-gitleaks.log)"; status=2; }
   [ -f "$GL" ] && gl_n="$(jq 'length' "$GL")"
 else

@@ -49,11 +49,13 @@ build_fr_args() {
     [ -s "$2" ] || die "File regole vuoto o inesistente: $2"
     grep -Ev '^\s*(#|$)' "$2" > "$REPORT_DIR/replace.clean"
     FR_ARGS+=(--replace-text "$REPORT_DIR/replace.clean")
+    # Di default riscrive anche i messaggi di commit (stesso file di regole)
+    [ "${REPLACE_MESSAGES:-1}" = "1" ] && FR_ARGS+=(--replace-message "$REPORT_DIR/replace.clean")
   fi
   [ "${#FR_ARGS[@]}" -gt 0 ] || die "Servono --paths e/o --replace"
 }
 
 # Hash delle regole approvate (collega dry-run e rewrite)
 rules_hash() { # <paths|""> <replace|"">
-  { [ -n "${1:-}" ] && cat "$1"; [ -n "${2:-}" ] && cat "$2"; true; } | sha256sum | cut -d' ' -f1
+  { [ -n "${1:-}" ] && cat "$1"; [ -n "${2:-}" ] && cat "$2"; echo "msg=${REPLACE_MESSAGES:-1}"; } | sha256sum | cut -d' ' -f1
 }

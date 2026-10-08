@@ -16,6 +16,7 @@ while [ $# -gt 0 ]; do
     --paths) PATHS="$2"; shift 2;;
     --replace) REPL="$2"; shift 2;;
     --keep) KEEP="$2"; shift 2;;
+    --no-message-rewrite) REPLACE_MESSAGES=0; shift;;
     *) die "Opzione sconosciuta: $1";;
   esac
 done
@@ -47,9 +48,14 @@ if [ -n "$REPL" ]; then
   while IFS= read -r line; do
     [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
     pat="${line%%==>*}"
-    if [[ "$pat" == regex:* ]]; then gr "$WORK" log --all --format=%H -G"${pat#regex:}" >> "$AFFECTED" 2>/dev/null || true
+    if [[ "$pat" == regex:* ]]; then
+      gr "$WORK" log --all --format=%H -G"${pat#regex:}" >> "$AFFECTED" 2>/dev/null || true
+      [ "${REPLACE_MESSAGES:-1}" = "1" ] && { gr "$WORK" log --all --format=%H -E --grep="${pat#regex:}" >> "$AFFECTED" 2>/dev/null || true; }
     elif [[ "$pat" == glob:* ]]; then warn "regola glob: in replace non analizzabile nel dry-run: $pat"
-    else gr "$WORK" log --all --format=%H -S"${pat#literal:}" >> "$AFFECTED" 2>/dev/null || true; fi
+    else
+      gr "$WORK" log --all --format=%H -S"${pat#literal:}" >> "$AFFECTED" 2>/dev/null || true
+      [ "${REPLACE_MESSAGES:-1}" = "1" ] && { gr "$WORK" log --all --format=%H -F --grep="${pat#literal:}" >> "$AFFECTED" 2>/dev/null || true; }
+    fi
   done < "$REPL"
 fi
 sort -u "$AFFECTED" -o "$AFFECTED"

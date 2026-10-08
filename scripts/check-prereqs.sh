@@ -23,6 +23,12 @@ else
   missing=$((missing + 1))
 fi
 check jq "jq --version" "sudo apt install jq"
+check curl "curl --version | cut -c1-40" "sudo apt install curl"
+if command -v gh >/dev/null 2>&1; then
+  printf '[ OK ] %-16s %s (opzionale: controllo visibilità/fork)\n' gh "$(gh --version 2>&1 | head -1)"
+else
+  printf '[ -- ] %-16s non installato (opzionale: controllo visibilità/fork su GitHub; https://cli.github.com)\n' gh
+fi
 check python3 "python3 --version" "sudo apt install python3"
 
 # gitleaks >= 8.19 per il sottocomando "git"

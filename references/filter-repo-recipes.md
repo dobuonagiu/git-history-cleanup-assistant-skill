@@ -49,6 +49,13 @@ git filter-repo --invert-paths --paths-from-file paths-to-remove.txt --replace-t
 `--dry-run` non modifica i ref; produce `filter-repo/fast-export.original` e `fast-export.filtered`
 (in un repo bare: `<repo>/filter-repo/`, altrimenti `.git/filter-repo/`).
 
+## Messaggi di commit
+`rewrite.sh` aggiunge `--replace-message` con lo stesso file di `replacements.txt` (disattivabile con `--no-message-rewrite`,
+da usare identico in `dry-run.sh`). `verify-final.sh` controlla anche i messaggi.
+```bash
+git filter-repo --replace-text replacements.txt --replace-message replacements.txt
+```
+
 ## Dopo la riscrittura
 ```bash
 git reflog expire --expire=now --all
