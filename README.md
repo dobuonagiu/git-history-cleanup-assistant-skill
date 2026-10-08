@@ -34,7 +34,30 @@ Riavvia Copilot CLI (verifica con `/skills`).
 
 ## Uso
 
-In Copilot CLI, dentro o fuori dal repo da bonificare:
+### Dove lanciarla
+**In una cartella nuova e vuota (es. `~/cleanup-work/`), non dentro il repository da bonificare.**
+
+```bash
+mkdir -p ~/cleanup-work && cd ~/cleanup-work
+copilot
+```
+
+Perché:
+- gli script non toccano il tuo checkout: clonano il sorgente come mirror (`git clone --mirror`) e riscrivono quella copia; `filter-repo` richiede comunque un clone fresco;
+- creano `./cleanup-reports/` nella cartella corrente, con report e mirror di backup che contengono i secret originali: dentro il progetto rischieresti di committarli;
+- il repo originale resta intatto, con eventuali modifiche non committate.
+
+Ti servono:
+- l'**URL** del repo sorgente (non un path locale: il lease al push è legato all'URL);
+- un **repo di backup vuoto e privato**, da creare prima sul provider;
+- i permessi di force push sul sorgente (e, se presenti, le branch protection da disattivare temporaneamente).
+
+Dopo la bonifica:
+- non fare `git pull` nel vecchio clone: rifai un clone fresco;
+- salva prima eventuali commit locali non pushati (es. `git format-patch`), perché non sono nel mirror;
+- a fine lavoro elimina `~/cleanup-work/` e il repo di backup (contengono i secret originali).
+
+### Richiesta a Copilot
 
 > Usa la skill git-history-cleanup-assistant per rimuovere i secret dalla history di `<URL repo>`; il backup va su `<URL repo backup vuoto e privato>`.
 
