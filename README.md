@@ -61,6 +61,24 @@ Dopo la bonifica:
 
 > Usa la skill git-history-cleanup-assistant per rimuovere i secret dalla history di `<URL repo>`; il backup va su `<URL repo backup vuoto e privato>`.
 
+### Cosa succede al repo originale
+La skill **non crea un nuovo repository**: la history bonificata viene pubblicata sul **repo originale**, allo stesso URL,
+sugli stessi branch e tag, solo dopo la tua approvazione esplicita (`Confermo il force push`, Fase 14).
+
+| Elemento | Ruolo |
+|----------|-------|
+| Repo originale (sorgente) | Destinazione finale: branch e tag vengono sovrascritti con la history riscritta |
+| Repo di backup | Solo copia di sicurezza della history originale (contiene ancora i secret): non è mai la destinazione finale, eliminalo a fine lavoro |
+| Cartella di lavoro (`cleanup-work`) | Mirror temporanei per riscrivere e verificare |
+
+Cosa aspettarsi sul sorgente:
+- **SHA cambiati**: chi ha un clone vecchio deve rifare il clone.
+- **Lease**: se il sorgente è cambiato dopo il backup (qualcuno ha pushato), il push viene rifiutato; si riparte da snapshot e dry-run. L'URL di push deve coincidere con quello dello snapshot.
+- **Branch/tag eliminati dalla riscrittura** restano sul remoto: la skill li elenca e li cancella solo con tua approvazione.
+- **Repo pubblico o con fork**: serve il consenso esplicito (`--ack-exposure`); fork, cache e PR esistenti possono conservare i vecchi commit.
+- **`refs/pull/*` (GitHub)** non sono sovrascrivibili: le PR aperte vanno ricreate o riallineate.
+- **Branch protection**: da disattivare prima (Fase 4) e riattivare dopo (Fase 16), altrimenti il push fallisce.
+
 La skill ti chiederà URL sorgente/backup, branch principale e provider, poi seguirà le fasi 0–16.
 
 ### Tool richiesti
