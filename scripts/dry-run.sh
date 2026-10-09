@@ -46,6 +46,8 @@ paths_of() { grep -a '^M ' "$1" | cut -d' ' -f4- | sed 's/^"//; s/"$//' | sort -
 paths_of "$ORIG" > "$WORK.orig.paths"; paths_of "$FILT" > "$WORK.filt.paths"
 REMOVED="$REPORT_DIR/dryrun-removed-files.txt"
 comm -23 "$WORK.orig.paths" "$WORK.filt.paths" > "$REMOVED"
+DIRS="$REPORT_DIR/dryrun-dirs.txt"
+python3 "$HERE/dir_report.py" "$WORK.orig.paths" "$WORK.filt.paths" > "$DIRS" || true
 rm -f "$WORK.orig.paths" "$WORK.filt.paths"
 
 # Commit coinvolti: path rimossi + occorrenze dei valori da sostituire
@@ -105,6 +107,13 @@ REPORT="$REPORT_DIR/dryrun-report.md"
   if [ -s "$REMOVED" ]; then sed 's/^/- /' "$REMOVED" | head -200; else echo "(nessuno)"; fi
   echo; echo "## File il cui contenuto verrà MODIFICATO dalle sostituzioni"
   if [ -s "$REPLFILES" ]; then sed 's/^/- /' "$REPLFILES" | head -200; else echo "(nessuno)"; fi
+  echo; echo "## Cartelle che spariscono (restano senza file: git non traccia cartelle vuote)"
+  if grep -q '^DIR_SPARISCONO:' "$DIRS"; then sed -n 's/^DIR_SPARISCONO: /- /p' "$DIRS" | head -200; else echo "(nessuna)"; fi
+  echo; echo "## Cartelle rimaste con soli file segnaposto (.gitkeep ecc.): NON sono vuote per git"
+  if grep -q '^DIR_SOLO_SEGNAPOSTO:' "$DIRS"; then
+    sed -n 's/^DIR_SOLO_SEGNAPOSTO: /- /p' "$DIRS" | head -200
+    echo "Se vuoi eliminare anche queste cartelle, aggiungile a paths-to-remove.txt (es. \`dir/\`) e ripeti G3 e dry-run."
+  else echo "(nessuna)"; fi
   echo; echo "## Branch riscritti"; grep '^refs/heads/' "$REFS" | sed 's#refs/heads/#- #' || true
   echo; echo "## Tag riscritti"; grep '^refs/tags/' "$REFS" | sed 's#refs/tags/#- #' || true
   echo; echo "## Keep-list"

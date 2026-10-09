@@ -29,11 +29,14 @@ git clone -q src.git w 2>/dev/null; cd w
 echo "hi README-TOKEN-XYZ" > README.md; mkdir cfg; echo 'AWS_KEY=AKIAIOSFODNN7EXAMPLE' > cfg/.env
 echo 'token = SECRETVALUE123' > app.py; echo 'host=10.1.2.3' > net.conf
 head -c 1500000 /dev/urandom > big.bin; echo k > server.pem
+mkdir -p gone/x/y deep/a/b deep/a/other placeholder
+echo g > gone/x/y/z.txt; echo s > deep/a/b/secret.key; echo o > deep/a/other/keep.txt
+echo old > placeholder/old.txt; : > placeholder/.gitkeep
 git add .; git commit -qm one
 git rm -q cfg/.env; echo x >> README.md; git commit -qam "fix: remove SECRETVALUE123 from config"
 git tag v1; git checkout -qb feat; echo y >> app.py; git commit -qam three
 git push -q origin main feat v1; cd "$T"
-printf '# regole\ncfg/.env\nnet.conf\n' > paths.txt; printf 'SECRETVALUE123==>***REMOVED***\n' > repl.txt
+printf '# regole\ncfg/.env\nnet.conf\ngone/\ndeep/a/b/secret.key\nplaceholder/old.txt\n' > paths.txt; printf 'SECRETVALUE123==>***REMOVED***\n' > repl.txt
 printf 'README.md\n' > keep.txt; printf 'README.md\ncfg/.env\n' > keep_bad.txt
 printf 'README-TOKEN-XYZ==>X\n' > repl_keep.txt; : > empty_paths.txt
 
@@ -44,10 +47,20 @@ t_ok "match_paths: glob/regex/literal" test "$(wc -l < "$T/m.out")" = 3
 t_ok "match_paths: non confonde prefissi" absent "$T/m.out" '.env.bak'
 
 echo "== gate.sh =="
-t_fail "approve senza TTY rifiutato (l'agente non può approvare)" "$S/gate.sh" approve nonexist
+t_fail "approve su gate inesistente rifiutato" "$S/gate.sh" approve nonexist
 "$S/gate.sh" create GT --title test --phrase "Frase di prova" --artifact "$T/paths.txt" >/dev/null 2>&1
 t_ok "gate creato DA_LEGGERE" test "$(gstatus GT)" = DA_LEGGERE
-t_fail "approve senza TTY rifiutato anche su gate esistente" "$S/gate.sh" approve GT
+t_fail "approve senza TTY e senza --phrase rifiutato" "$S/gate.sh" approve GT
+t_ok "...e suggerisce il comando con '!'" contains "$T/last.log" '--phrase'
+t_fail "approve non interattivo con --phrase errata" "$S/gate.sh" approve GT --phrase "sbagliata"
+t_ok "...stato invariato" test "$(gstatus GT)" = DA_LEGGERE
+t_ok "approve non interattivo con --phrase esatta (come con '!')" "$S/gate.sh" approve GT --phrase "Frase di prova"
+t_ok "...APPROVATO e registrato come non interattivo" contains "$T/rep/gates/GT.md" 'via=non interattivo'
+"$S/gate.sh" create GT --title test --phrase "Frase di prova" --artifact "$T/paths.txt" --summary riepilogo2 >/dev/null 2>&1
+echo '# x' >> paths.txt; "$S/gate.sh" create GT --title test --phrase "Frase di prova" --artifact "$T/paths.txt" > "$T/create.out" 2>&1
+sed -i '$d' paths.txt
+t_ok "create stampa il comando '!' da suggerire all'utente" contains "$T/create.out" '!.*gate.sh approve GT --phrase'
+"$S/gate.sh" create GT --title test --phrase "Frase di prova" --artifact "$T/paths.txt" >/dev/null 2>&1
 t_rc "require bloccato se DA_LEGGERE (exit 4)" 4 "$S/gate.sh" require GT
 t_fail "approve con frase errata" approve GT "sbagliata"
 t_ok "...stato invariato" test "$(gstatus GT)" = DA_LEGGERE
@@ -120,6 +133,12 @@ t_ok "dry-run ok (regole approvate)" "$S/dry-run.sh" "$MIRROR" "$T/dry" --paths 
 t_ok "dry-run conta il commit con secret nel messaggio" test "$(wc -l < "$T/rep/dryrun-affected-commits.txt")" -ge 2
 t_ok "gate G4-riscrittura creato DA_LEGGERE" test "$(gstatus G4-riscrittura)" = DA_LEGGERE
 t_ok "report segnala il branch di default" contains "$T/rep/dryrun-report.md" 'branch di default'
+t_ok "cartella con tutti i file eliminati sparisce" contains "$T/rep/dryrun-dirs.txt" 'DIR_SPARISCONO: cfg$'
+t_ok "...anche le cartelle annidate rimaste vuote" contains "$T/rep/dryrun-dirs.txt" 'DIR_SPARISCONO: gone/x/y'
+t_ok "...fino alla radice vuota" contains "$T/rep/dryrun-dirs.txt" 'DIR_SPARISCONO: gone$'
+t_ok "...ma non le cartelle che hanno ancora file" absent "$T/rep/dryrun-dirs.txt" 'DIR_SPARISCONO: deep/a$'
+t_ok "cartella con soli segnaposto segnalata" contains "$T/rep/dryrun-dirs.txt" 'DIR_SOLO_SEGNAPOSTO: placeholder'
+t_ok "report elenca le cartelle" contains "$T/rep/dryrun-report.md" 'Cartelle che spariscono'
 
 echo "== rewrite (gate G4) =="
 t_fail "rewrite bloccato: G4 non approvato" "$S/rewrite.sh" "$MIRROR" "$T/clean" --paths paths.txt --replace repl.txt
@@ -132,6 +151,9 @@ cp repl.bak repl.txt
 t_fail "rewrite rifiutato con --no-message-rewrite (hash diverso)" "$S/rewrite.sh" "$MIRROR" "$T/clean" --paths paths.txt --replace repl.txt --no-message-rewrite
 t_ok "rewrite approvato" "$S/rewrite.sh" "$MIRROR" "$T/clean" --paths paths.txt --replace repl.txt
 t_ok "messaggi di commit riscritti" test -z "$(git --git-dir="$T/clean" log --all --format=%B | grep SECRETVALUE123)"
+t_ok "cartelle vuote assenti dalla history riscritta" test -z "$(git --git-dir="$T/clean" log --all --name-only --format= | grep -E '^(gone|cfg)/')"
+t_ok "cartella con file residui conservata" test -n "$(git --git-dir="$T/clean" ls-tree -r --name-only main | grep '^deep/a/other/keep.txt$')"
+t_ok "segnaposto conservato (non era vuota per git)" test -n "$(git --git-dir="$T/clean" ls-tree -r --name-only main | grep '^placeholder/.gitkeep$')"
 t_ok "backup intatto" test -n "$(git --git-dir="$MIRROR" log --all --format=%B | grep SECRETVALUE123)"
 t_fail "push-prepare rifiutato prima della verifica" "$S/push-cleaned.sh" "$T/clean" "$T/src.git" --prepare
 t_ok "verify-final OK" "$S/verify-final.sh" "$T/clean" post-cleanup --removed paths.txt --replace repl.txt --keep keep.txt --baseline "$MIRROR"

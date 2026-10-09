@@ -20,8 +20,8 @@ Tutti gli script scrivono in `./cleanup-reports/` (override: `CLEANUP_REPORTS=/p
 
 ## Gate (file Markdown con stato)
 `scripts/gate.sh create|status|require|approve|reject`. File in `cleanup-reports/gates/<ID>.md`, stati
-`DA_LEGGERE` → `APPROVATO` (o `RIFIUTATO`). `approve` funziona solo da terminale interattivo (TTY) e richiede
-di digitare la frase esatta: l'agente non può approvare. `require` fallisce (exit 4) se il gate non è APPROVATO
+`DA_LEGGERE` → `APPROVATO` (o `RIFIUTATO`). `approve` lo lancia l'utente: da terminale interattivo digita la frase esatta; senza TTY (es. `!` nel prompt di
+Copilot CLI) passa `--phrase "<frase>"`. L'agente suggerisce il comando ma non approva mai. `require` fallisce (exit 4) se il gate non è APPROVATO
 o se un artefatto è cambiato dopo l'approvazione. Un `create` con stessi artefatti e frase su un gate già
 APPROVATO lo lascia invariato (utile per riprendere una sessione).
 

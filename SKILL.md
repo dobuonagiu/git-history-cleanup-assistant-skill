@@ -29,12 +29,18 @@ dopo l'approvazione dell'utente (gate G5). Il repo di backup è solo una copia d
   *suggerimenti* (`<label>-paths-suggested.txt`, righe `#> ...` non attive): decide l'utente (Fase 6).
 Un file eliminato sparisce da **tutta** la history, non solo dal tip. Mostra sempre all'utente l'elenco dei
 file che verranno eliminati prima di chiedere conferma.
+**Cartelle**: git non traccia cartelle vuote. Quando tutti i file di una cartella vengono eliminati, la cartella e
+i genitori rimasti senza file spariscono da ogni commit (nessuna azione richiesta). Una cartella che contiene solo
+file segnaposto (`.gitkeep`, `.keep`, ...) **non è vuota per git** e resta: il dry-run la segnala nel report
+("Cartelle rimaste con soli file segnaposto"); se l'utente vuole eliminarla aggiungi la cartella
+(es. `placeholder/`) a `paths-to-remove.txt` e rifai G3 e dry-run.
 
 ## Regole obbligatorie (non derogabili)
 
 1. **Mai** riscrivere la history né fare force push senza il relativo **gate APPROVATO dall'utente** (vedi Gate).
 2. **Mai** modificare i file in `cleanup-reports/gates/` né eseguire `gate.sh approve`: l'approvazione la dà
-   solo l'utente, da un proprio terminale interattivo. Se un gate non è APPROVATO **fermati e attendi**.
+   solo l'utente. Tu **suggerisci il comando** (da lanciare con `!` nel prompt di Copilot CLI) e attendi.
+   Se un gate non è APPROVATO **fermati**.
 3. **Prima** di qualsiasi modifica crea sempre un backup completo (mirror) e verificalo.
 4. Dopo ogni bonifica **riesegui** la scansione dei secret.
 5. Se trovi credenziali, ricorda sempre che vanno considerate **compromesse** e **rigenerate** (e ruotate per
@@ -65,9 +71,14 @@ Ogni passo critico produce un file `cleanup-reports/gates/<ID>.md` con stato **D
 | `G5-push` | `push-cleaned.sh --prepare` | `Confermo il force push` (se repo pubblico/con fork/non verificato: `Confermo il force push su repository pubblico o non verificato`) | `push-cleaned.sh` |
 
 **Procedura per ogni gate**: (1) crea il gate con lo script; (2) di' all'utente il percorso del file `.md` e
-chiedigli di **leggerlo** (e degli artefatti elencati); (3) l'utente approva **da un proprio terminale**:
-`<dir-skill>/scripts/gate.sh approve <ID>` e digita la frase esatta (richiede TTY: l'agente non può farlo);
-(4) attendi che l'utente confermi di aver approvato, poi verifica con `gate.sh status` e prosegui.
+chiedigli di **leggerlo** (e degli artefatti elencati); (3) **suggerisci il comando di approvazione**, che l'utente
+lancia lui stesso nel prompt di Copilot CLI con il `!` davanti, mostrandolo in un blocco di codice pronto da incollare:
+```
+!<dir-skill>/scripts/gate.sh approve <ID> --phrase "<frase esatta del gate>"
+```
+(lo stesso comando, senza `--phrase`, funziona da un terminale interattivo e chiede di digitare la frase;
+lo script stampa già il comando giusto alla creazione del gate e quando un gate blocca); (4) attendi che l'utente
+confermi di aver approvato, poi verifica con `gate.sh status` e prosegui. Non eseguire mai tu il comando `approve`.
 Se l'utente non vuole procedere: `gate.sh reject <ID>`. Se artefatti o regole cambiano dopo l'approvazione, il
 gate va ricreato e riapprovato.
 
@@ -152,7 +163,7 @@ riscritti, avviso se il **branch di default** viene riscritto.
 [--max-blob-size 5M] [--no-message-rewrite] [--allow-keep-modified]`. Nessuna modifica reale.
 
 ### FASE 10 – Approvazione  (GATE G4)
-Di' all'utente di leggere `gates/G4-riscrittura.md` e `dryrun-report.md` e di approvare da terminale
+Di' all'utente di leggere `gates/G4-riscrittura.md` e `dryrun-report.md` e suggerisci il comando `!...gate.sh approve G4-riscrittura --phrase ...`
 (`Confermo la riscrittura della history`). Senza G4 APPROVATO **non procedere**.
 
 ### FASE 11 – Bonifica reale  (richiede G4)

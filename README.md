@@ -94,7 +94,7 @@ La skill verifica la presenza di questi tool e, se mancano, **propone** l'instal
 | jq, python3, curl | `sudo apt install jq python3 curl` |
 | gh (opzionale) | [GitHub CLI](https://cli.github.com): controllo visibilità/fork prima del push |
 
-## Gate di sicurezza (approvi tu, da terminale)
+## Gate di sicurezza (approvi tu)
 Ogni passo critico produce un file `cleanup-reports/gates/<ID>.md` con stato **DA_LEGGERE** → **APPROVATO**.
 Gli script distruttivi non partono finché il gate non è APPROVATO, né se gli artefatti da leggere sono cambiati
 dopo l'approvazione.
@@ -107,18 +107,26 @@ dopo l'approvazione.
 | G4-riscrittura | riscrittura della history | `Confermo la riscrittura della history` |
 | G5-push | force push sul repo originale | `Confermo il force push` |
 
-Quando Copilot ti dice che un gate è pronto: **leggi il file `.md` indicato**, poi da un **tuo terminale**:
-```bash
-~/.copilot/skills/git-history-cleanup-assistant/scripts/gate.sh approve G4-riscrittura
+Quando Copilot ti dice che un gate è pronto: **leggi il file `.md` indicato** e gli artefatti elencati, poi
+approva lanciando tu il comando che Copilot ti suggerisce, **nel prompt di Copilot CLI con il `!` davanti**:
 ```
-e digita la frase esatta. Il comando richiede un terminale interattivo: l'agente non può approvare al posto tuo.
-`gate.sh status` mostra lo stato di tutti i gate; `gate.sh reject <ID>` li blocca.
+!~/.copilot/skills/git-history-cleanup-assistant/scripts/gate.sh approve G4-riscrittura --phrase "Confermo la riscrittura della history"
+```
+Lo stesso comando senza `--phrase`, da un terminale interattivo, ti chiede di digitare la frase. L'approvazione
+viene registrata nel file (data, utente, modalità). `gate.sh status` mostra lo stato di tutti i gate;
+`gate.sh reject <ID>` li blocca.
+
+> I gate sono un controllo procedurale: l'agente ha l'istruzione di non approvare mai e di limitarsi a suggerirti
+> il comando; un'approvazione non interattiva non è tecnicamente distinguibile da una fatta dall'agente.
+> Controlla i comandi che Copilot ti chiede di approvare e non usare `/allow-all` durante una bonifica.
 
 ## Cosa può eliminare
 - **Valori sensibili** dentro i file e nei messaggi di commit (sostituzione).
 - **File interi** da tutta la history: per path, directory, `glob:` o `regex:` (es. `*.pem`, `.env`).
 - **File grandi**: `--max-blob-size 5M` elimina ogni file oltre la soglia.
 - `scan-files.sh` scopre file grandi e con estensioni/nomi sensibili e propone regole (mai attive senza la tua scelta).
+- **Cartelle**: git non traccia cartelle vuote, quindi se si eliminano tutti i file di una cartella spariscono anche
+  la cartella e i genitori rimasti vuoti. Cartelle con soli segnaposto (`.gitkeep`…) restano: il dry-run le segnala.
 - File da **non toccare**: la keep-list; una regola che li elimina o li modifica è segnalata come conflitto.
 
 ## Funzionalità di sicurezza

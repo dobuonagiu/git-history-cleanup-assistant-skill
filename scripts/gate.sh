@@ -6,13 +6,15 @@
 #   gate.sh create <id> --title T --phrase "frase" [--artifact FILE]... [--summary TESTO | --summary-file F]
 #   gate.sh status [id]
 #   gate.sh require <id> [--optional]     exit 0 solo se APPROVATO e artefatti invariati; altrimenti exit 4
-#   gate.sh approve <id>                  SOLO da terminale interattivo (TTY) dell'utente: mostra il gate
-#                                         e richiede di digitare la frase esatta
+#   gate.sh approve <id> [--phrase "frase"]   SOLO l'utente. Da terminale interattivo chiede di digitare la
+#                                         frase esatta; senza TTY (es. "!" nel prompt di Copilot CLI) la frase
+#                                         esatta va passata con --phrase. Mostra sempre il gate prima.
 #   gate.sh reject <id> [--reason R]      porta il gate a RIFIUTATO (bloccante)
 #
 # Stati: DA_LEGGERE -> APPROVATO   (oppure RIFIUTATO). Il file è in $REPORT_DIR/gates/<id>.md
 # Se un artefatto cambia dopo la creazione, l'hash non coincide più e il gate non è valido: va ricreato.
-# NOTA: è un controllo procedurale. L'agente non deve mai modificare questi file né lanciare "approve".
+# NOTA: è un controllo procedurale (l'approvazione senza TTY non è tecnicamente distinguibile da quella dell'agente).
+# L'agente NON deve mai modificare questi file né lanciare "approve": deve solo suggerire all'utente il comando.
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 GATES="$REPORT_DIR/gates"; mkdir -p "$GATES"
@@ -70,12 +72,16 @@ case "$cmd" in
       for a in "${arts[@]}"; do echo "- \`$a\`"; done
       [ "${#arts[@]}" -gt 0 ] || echo "- (nessun artefatto)"
       echo
-      echo "## Come approvare (solo tu, da un terminale interattivo)"
+      echo "## Come approvare (solo tu, dopo aver letto)"
       echo
+      echo "Nel prompt di Copilot CLI (il \`!\` esegue il comando nella tua shell):"
+      echo '```'
+      echo "!$SELF approve $id --phrase \"$phrase\""
+      echo '```'
+      echo "Oppure da un tuo terminale interattivo (ti verrà chiesto di digitare la frase):"
       echo '```bash'
       echo "$SELF approve $id"
       echo '```'
-      echo "Ti verrà chiesto di digitare esattamente: \`$phrase\`"
       echo "Per rifiutare: \`$SELF reject $id\`"
       echo
       echo "## Storico"
@@ -90,7 +96,8 @@ case "$cmd" in
     fi
     mv "$f" "$real"; f="$real"
     ok "Gate creato: $f (stato DA_LEGGERE)"
-    echo "Chiedi all'utente di leggere il file e di approvare da terminale: $SELF approve $id"
+    echo "Chiedi all'utente di LEGGERE $f, poi di approvare lanciando nel prompt di Copilot CLI (con il '!'):"
+    echo "  !$SELF approve $id --phrase \"$phrase\""
     ;;
 
   status)
@@ -116,7 +123,7 @@ case "$cmd" in
     st="$(field "$f" status)"
     if [ "$st" != APPROVATO ]; then
       fail "GATE $id in stato $st: operazione bloccata."
-      echo "L'utente deve leggere $f e approvare da terminale:  $SELF approve $id" >&2; exit 4
+      echo "L'utente deve leggere $f e approvare lanciando nel prompt di Copilot CLI:  !$SELF approve $id --phrase \"$(field "$f" phrase)\"" >&2; exit 4
     fi
     if [ "$(field "$f" artifacts_sha256)" != "$(artifacts_hash "$f")" ]; then
       fail "GATE $id approvato ma gli artefatti sono cambiati dopo l'approvazione: ricreare il gate e rifarlo approvare."; exit 4
@@ -124,21 +131,32 @@ case "$cmd" in
     ;;
 
   approve)
-    id="${1:?id gate}"; f="$(gate_file "$id")"; [ -f "$f" ] || die "Gate inesistente: $f"
-    if [ ! -t 0 ] || [ ! -t 1 ]; then
-      die "L'approvazione richiede un terminale interattivo dell'utente (TTY). L'agente non può approvare."
-    fi
+    id="${1:?id gate}"; shift; given=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --phrase) given="${2:-}"; shift 2;;
+        *) die "Opzione sconosciuta: $1";;
+      esac
+    done
+    f="$(gate_file "$id")"; [ -f "$f" ] || die "Gate inesistente: $f"
     [ "$(field "$f" status)" != RIFIUTATO ] || die "Gate rifiutato: va ricreato."
     [ "$(field "$f" artifacts_sha256)" = "$(artifacts_hash "$f")" ] || die "Artefatti cambiati dopo la creazione del gate: ricrearlo."
-    cat "$f"; echo
     phrase="$(field "$f" phrase)"
-    printf 'Hai letto il gate? Per APPROVARE digita esattamente: %s\n> ' "$phrase"
-    read -r ans < /dev/tty
+    cat "$f"; echo
+    if [ -t 0 ] && [ -t 1 ]; then
+      printf 'Hai letto il gate? Per APPROVARE digita esattamente: %s\n> ' "$phrase"
+      read -r ans < /dev/tty
+      via="terminale interattivo ($(tty))"
+    else
+      # Senza TTY (es. '!' di Copilot CLI): la frase esatta va passata con --phrase dall'utente
+      [ -n "$given" ] || die "Senza terminale interattivo serve --phrase. Comando (da lanciare TU con '!'): $SELF approve $id --phrase \"$phrase\""
+      ans="$given"; via="non interattivo (--phrase)"
+    fi
     if [ "$ans" != "$phrase" ]; then echo "Frase non corrispondente: gate NON approvato."; exit 1; fi
     set_field "$f" status APPROVATO
     set_field "$f" approved_at "$(date -u +%FT%TZ)"
-    set_field "$f" approved_by "${USER:-?}@$(hostname) tty=$(tty)"
-    echo "- $(date -u +%FT%TZ) APPROVATO da ${USER:-?}@$(hostname) ($(tty))" >> "$f"
+    set_field "$f" approved_by "${USER:-?}@$(hostname) via=$via"
+    echo "- $(date -u +%FT%TZ) APPROVATO da ${USER:-?}@$(hostname) [$via]" >> "$f"
     sed -i 's/^\*\*Stato: DA_LEGGERE\*\*.*/**Stato: APPROVATO**/' "$f"
     ok "Gate $id APPROVATO"
     ;;
