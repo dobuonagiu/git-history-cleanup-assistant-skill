@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 # Fasi 11-12: bonifica reale + pulizia. DISTRUTTIVO sulla copia di lavoro (mai sul backup).
-# Uso: rewrite.sh <source-repo-or-mirror> <workdir> --approval "Confermo la riscrittura della history"
-#                 [--paths F] [--replace F]
-# Rifiuta di girare se: frase non esatta, dry-run non eseguito, regole cambiate dopo il dry-run.
+# Uso: rewrite.sh <source-repo-or-mirror> <workdir> [--paths F] [--replace F] [--max-blob-size 5M] [--no-message-rewrite]
+# Rifiuta di girare se: il gate G4-riscrittura non è APPROVATO dall'utente (gate.sh approve G4-riscrittura,
+# da terminale), il dry-run non è stato eseguito o le regole/artefatti sono cambiati dopo il dry-run.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-[ $# -ge 2 ] || die "Uso: $0 <source> <workdir> --approval '<frase>' [--paths F] [--replace F]"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+[ $# -ge 2 ] || die "Uso: $0 <source> <workdir> [--paths F] [--replace F] [--max-blob-size 5M]"
 SRC="$1"; WORK="$2"; shift 2
-PATHS=""; REPL=""; APPROVAL=""
+PATHS=""; REPL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --paths) PATHS="$2"; shift 2;;
     --replace) REPL="$2"; shift 2;;
-    --approval) APPROVAL="$2"; shift 2;;
+    --max-blob-size) MAX_BLOB="$2"; shift 2;;
     --no-message-rewrite) REPLACE_MESSAGES=0; shift;;
     *) die "Opzione sconosciuta: $1";;
   esac
 done
-[ "$APPROVAL" = "Confermo la riscrittura della history" ] || die "Approvazione mancante o non esatta. Riscrittura NON eseguita."
+"$HERE/gate.sh" require G4-riscrittura || die "Riscrittura NON eseguita: gate G4-riscrittura non approvato."
+"$HERE/gate.sh" require G2-protezioni --optional || die "Riscrittura NON eseguita: gate G2-protezioni non approvato."
 [ -f "$REPORT_DIR/dryrun.sha256" ] || die "Dry run non eseguito (Fase 9): riscrittura rifiutata."
 [ "$(cat "$REPORT_DIR/dryrun.sha256")" = "$(rules_hash "$PATHS" "$REPL")" ] \
   || die "Le regole sono cambiate dopo il dry run: rieseguire dry-run.sh e richiedere nuova approvazione."

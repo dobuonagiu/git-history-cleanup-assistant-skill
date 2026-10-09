@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
-# Stub di trufflehog per i test: nessun finding.
+# Stub di trufflehog per i test: nessun finding. Come il vero trufflehog, FALLISCE sui mirror bare
+# (richiede una directory con .git): verifica che gli script usino la copia di scansione.
 [ "${1:-}" = --version ] && { echo "trufflehog stub"; exit 0; }
+target=""; for a in "$@"; do case "$a" in file://*) target="${a#file://}";; esac; done
+if [ -n "$target" ] && [ ! -d "$target/.git" ]; then
+  echo '{"level":"error","msg":"error running scan","error":"failed to stat .git"}' >&2
+  exit 1
+fi
 exit 0

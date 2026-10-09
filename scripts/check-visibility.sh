@@ -2,7 +2,7 @@
 # Fase 2/14: visibilità e fork del repository (mai dedurli dal nome/URL).
 # Uso: check-visibility.sh <REMOTE_URL>
 # Exit: 0 = privato e senza fork (o provider non verificabile: vedi output)
-#       10 = pubblico oppure con fork (serve --ack-exposure in push-cleaned.sh)
+#       10 = pubblico oppure con fork (la frase del gate G5 diventa più forte)
 #       2  = GitHub ma verifica impossibile (gh mancante / non autenticato / errore)
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"

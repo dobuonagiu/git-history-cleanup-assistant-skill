@@ -20,6 +20,14 @@ Glob: `git filter-repo --invert-paths --path-glob '*.pem'`
 > Attenzione: l'esempio del prompt `--path-glob '*.md' --invert-paths` **rimuoverebbe tutti i Markdown**
 > (README, CHANGELOG...). Usarlo solo se è davvero l'intento dell'utente e dopo aver compilato la keep-list.
 
+## A2. File grandi o per estensione
+```bash
+git filter-repo --strip-blobs-bigger-than 5M          # tutti i blob > 5 MiB, ovunque nella history
+git filter-repo --invert-paths --path-glob '*.pem' --path-glob '*.p12'
+```
+Con gli script: `--max-blob-size 5M` in `dry-run.sh`/`rewrite.sh`, oppure regole `glob:*.pem` in `paths-to-remove.txt`.
+`scan-files.sh` elenca i candidati (suggerimenti non attivi).
+
 ## B. Sostituire valori sensibili
 `replacements.txt`:
 ```

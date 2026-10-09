@@ -10,16 +10,16 @@ GL="$REPORT_DIR/$label-gitleaks.json"; TH="$REPORT_DIR/$label-trufflehog.json"
 OUT="$REPORT_DIR/$label-findings.tsv"
 
 {
-  [ -s "$GL" ] && jq -r '.[] | ["gitleaks:"+.RuleID, .File, .Commit, (.Email // .Author), "HIGH", ""] | @tsv' "$GL"
-  [ -s "$TH" ] && jq -r '[ "trufflehog:"+.DetectorName, (.SourceMetadata.Data.Git.file // ""), (.SourceMetadata.Data.Git.commit // ""),
-      (.SourceMetadata.Data.Git.email // ""), (if .Verified then "CRITICAL (verificato attivo)" else "HIGH" end), ""] | @tsv' "$TH"
+  [ -s "$GL" ] && jq -r '.[] | ["gitleaks:"+.RuleID, (.File + ":" + (.StartLine|tostring)), .Commit, (.Email // .Author), "HIGH", (.SecretMasked // "-")] | @tsv' "$GL"
+  [ -s "$TH" ] && jq -r '[ "trufflehog:"+.DetectorName, (.SourceMetadata.Data.Git.file // "-"), (.SourceMetadata.Data.Git.commit // ""),
+      (.SourceMetadata.Data.Git.email // "-"), (if .Verified then "CRITICAL (verificato attivo)" else "HIGH" end), (.Redacted // "-")] | @tsv' "$TH"
 } 2>/dev/null | sort -u > "$OUT.raw" || true
 
-printf 'TIPO\tFILE\tCOMMIT\tAUTORE\tGRAVITA\tBRANCH\n' > "$OUT"
-while IFS=$'\t' read -r t f c a s _; do
+printf 'TIPO\tFILE:RIGA\tCOMMIT\tAUTORE\tGRAVITA\tVALORE(mascherato)\tBRANCH\n' > "$OUT"
+while IFS=$'\t' read -r t f c a s m _; do
   [ -n "$c" ] || continue
   br="$(gr "$repo" for-each-ref --contains "$c" --format='%(refname:short)' refs/heads refs/tags 2>/dev/null | paste -sd, - || true)"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$t" "$f" "${c:0:10}" "$a" "$s" "${br:-?}"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$t" "$f" "${c:0:10}" "$a" "$s" "${m:--}" "${br:-?}"
 done < "$OUT.raw" >> "$OUT"
 rm -f "$OUT.raw"
 

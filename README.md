@@ -75,7 +75,8 @@ Cosa aspettarsi sul sorgente:
 - **SHA cambiati**: chi ha un clone vecchio deve rifare il clone.
 - **Lease**: se il sorgente è cambiato dopo il backup (qualcuno ha pushato), il push viene rifiutato; si riparte da snapshot e dry-run. L'URL di push deve coincidere con quello dello snapshot.
 - **Branch/tag eliminati dalla riscrittura** restano sul remoto: la skill li elenca e li cancella solo con tua approvazione.
-- **Repo pubblico o con fork**: serve il consenso esplicito (`--ack-exposure`); fork, cache e PR esistenti possono conservare i vecchi commit.
+- **Repo pubblico o con fork**: il gate G5 richiede una frase più forte (`Confermo il force push su repository pubblico o non verificato`); fork, cache e PR esistenti possono conservare i vecchi commit.
+- **Solo i ref cambiati** vengono pubblicati (gli invariati non si toccano).
 - **`refs/pull/*` (GitHub)** non sono sovrascrivibili: le PR aperte vanno ricreate o riallineate.
 - **Branch protection**: da disattivare prima (Fase 4) e riattivare dopo (Fase 16), altrimenti il push fallisce.
 
@@ -93,7 +94,35 @@ La skill verifica la presenza di questi tool e, se mancano, **propone** l'instal
 | jq, python3, curl | `sudo apt install jq python3 curl` |
 | gh (opzionale) | [GitHub CLI](https://cli.github.com): controllo visibilità/fork prima del push |
 
+## Gate di sicurezza (approvi tu, da terminale)
+Ogni passo critico produce un file `cleanup-reports/gates/<ID>.md` con stato **DA_LEGGERE** → **APPROVATO**.
+Gli script distruttivi non partono finché il gate non è APPROVATO, né se gli artefatti da leggere sono cambiati
+dopo l'approvazione.
+
+| Gate | Cosa sblocca | Frase da digitare |
+|------|--------------|-------------------|
+| G1-backup | push sul repo di backup | `Confermo il backup` |
+| G2-protezioni | dry-run, rewrite, push (se ci sono branch protection/ruleset) | `Confermo che le protezioni sono state rimosse o aggirate` |
+| G3-classificazione | dry-run | `Confermo la classificazione` |
+| G4-riscrittura | riscrittura della history | `Confermo la riscrittura della history` |
+| G5-push | force push sul repo originale | `Confermo il force push` |
+
+Quando Copilot ti dice che un gate è pronto: **leggi il file `.md` indicato**, poi da un **tuo terminale**:
+```bash
+~/.copilot/skills/git-history-cleanup-assistant/scripts/gate.sh approve G4-riscrittura
+```
+e digita la frase esatta. Il comando richiede un terminale interattivo: l'agente non può approvare al posto tuo.
+`gate.sh status` mostra lo stato di tutti i gate; `gate.sh reject <ID>` li blocca.
+
+## Cosa può eliminare
+- **Valori sensibili** dentro i file e nei messaggi di commit (sostituzione).
+- **File interi** da tutta la history: per path, directory, `glob:` o `regex:` (es. `*.pem`, `.env`).
+- **File grandi**: `--max-blob-size 5M` elimina ogni file oltre la soglia.
+- `scan-files.sh` scopre file grandi e con estensioni/nomi sensibili e propone regole (mai attive senza la tua scelta).
+- File da **non toccare**: la keep-list; una regola che li elimina o li modifica è segnalata come conflitto.
+
 ## Funzionalità di sicurezza
+- Scanner robusti: trufflehog su mirror bare, valori mascherati con `file:riga` (non `REDACTED` generico).
 - Backup mirror verificato + **preimage** dei ref remoti; il push usa `--force-with-lease` per ref (mai `--force` nudo).
 - Controllo **visibilità e fork** (`gh`); repo pubblico/con fork richiede consenso esplicito.
 - Riscrittura anche dei **messaggi di commit**; verifica su file e messaggi.

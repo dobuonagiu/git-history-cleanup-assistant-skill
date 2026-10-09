@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Stub di gitleaks per i test: segnala come finding ogni commit che introduce/rimuove $STUB_SECRET.
+# Simula il comportamento reale: senza --redact il campo Secret contiene il valore in chiaro.
 [ "$1" = git ] && [ "${2:-}" = --help ] && exit 0
 args=("$@"); last="${args[$((${#args[@]} - 1))]}"; rp=""
 for ((i = 0; i < ${#args[@]}; i++)); do [ "${args[$i]}" = --report-path ] && rp="${args[$((i + 1))]}"; done
@@ -8,7 +9,8 @@ echo "[]" > "$rp"
 commits="$("${G[@]}" log --all --format=%H -S"$STUB_SECRET")"
 if [ -n "$commits" ]; then
   for c in $commits; do
-    printf '{"RuleID":"stub-secret","File":"cfg/.env","Commit":"%s","Author":"T","Email":"t@example.com"}\n' "$c"
+    printf '{"RuleID":"stub-secret","File":"cfg/.env","StartLine":2,"Commit":"%s","Author":"T","Email":"t@example.com","Secret":"%s","Match":"token = %s","Message":"msg %s"}\n' \
+      "$c" "$STUB_SECRET" "$STUB_SECRET" "$STUB_SECRET"
   done | jq -s '.' > "$rp"
 fi
 exit 0

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Stub di gh per i test: "gh repo view <slug> --json ..." -> repo PUBLIC con 3 fork.
-if [ "${1:-}" = repo ] && [ "${2:-}" = view ]; then
-  echo '{"visibility":"PUBLIC","forkCount":3,"isFork":false,"nameWithOwner":"x/y","isArchived":false}'
-  exit 0
-fi
-exit 1
+# Stub di gh per i test: repo x/y PUBLIC con 3 fork, branch "main" protetta e un ruleset attivo.
+a="$*"
+case "$a" in
+  "repo view"*) echo '{"visibility":"PUBLIC","forkCount":3,"isFork":false,"nameWithOwner":"x/y","isArchived":false}';;
+  "api repos/x/y/branches"*) echo main;;
+  "api repos/x/y/rulesets/1"*) echo '{"id":1,"name":"protect-default","enforcement":"active","target":"branch","bypass_actors":[],"conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"]}},"rules":[{"type":"non_fast_forward"},{"type":"pull_request"}]}';;
+  "api repos/x/y/rulesets"*) echo '[{"id":1,"enforcement":"active","target":"branch"}]';;
+  *) exit 1;;
+esac

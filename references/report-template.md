@@ -10,6 +10,7 @@
 | Secret rimossi | N |
 | File rimossi | elenco |
 | File preservati (keep-list) | elenco |
+| Gate (G1…G5) | stato di ciascun gate (`gate.sh status`) |
 | Stato verifica finale | post-cleanup: OK/FALLITO · post-push: OK/FALLITO |
 
 Fonti dei numeri: `cleanup-reports/state.env`, `*-findings.tsv`, `verify-*.md`, `dryrun-*.txt`.

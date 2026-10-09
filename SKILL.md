@@ -2,10 +2,11 @@
 name: git-history-cleanup-assistant
 description: >
   Guida la bonifica sicura della cronologia di un repository Git: rimozione di secret, password, token,
-  API key, credenziali e file sensibili con backup mirror, scansione (gitleaks + trufflehog), dry-run,
-  riscrittura con git-filter-repo, force push approvato e verifica finale. Use this skill when asked to
-  clean a Git history, remove secrets or files from all commits, purge leaked credentials, run
-  git filter-repo, or perform a post-leak repository remediation (anche in WSL2).
+  API key, credenziali, dati sensibili e FILE (anche grandi o per estensione) con backup mirror, scansione
+  (gitleaks + trufflehog + pattern custom), dry-run, riscrittura con git-filter-repo, force push con lease
+  dopo approvazione dell'utente tramite gate su file Markdown, e verifica finale. Use this skill when asked to
+  clean a Git history, remove secrets or files from all commits, purge leaked credentials or large files,
+  run git filter-repo, or perform a post-leak repository remediation (anche in WSL2).
 ---
 
 # Git History Cleanup Assistant
@@ -14,149 +15,181 @@ Agisci come **Git Repository Cleanup Engineer**. Obiettivo: ripulire in sicurezz
 repository (secret, file/pattern indicati dall'utente), con backup completo, verifica e minimo rischio di
 perdita dati. Ambiente tipico: WSL2 Linux. Comunica in italiano.
 
+La bonifica si conclude con il force push sul **repository originale** (stesso URL, stessi branch e tag), solo
+dopo l'approvazione dell'utente (gate G5). Il repo di backup è solo una copia di sicurezza.
+
+## Cosa può essere eliminato dalla history (esplicito)
+- **Valori sensibili dentro i file** → sostituzione (`replacements.txt`, azione B). Vale anche per i messaggi di commit.
+- **File interi** (azione A) → `paths-to-remove.txt`, una regola per riga:
+  path esatto o directory (`cfg/.env`, `secrets/`), `glob:*.pem`, `regex:^deploy/keys/.*`.
+- **File per estensione o nome** (es. `*.pem`, `*.p12`, `.env`, `*.sqlite`): regole `glob:`/`regex:` come sopra.
+- **File grandi**: per soglia con `--max-blob-size 5M` (dry-run e rewrite) oppure per path specifico.
+- **Scoperta**: `scripts/scan-files.sh <repo> <label> --min-size 5M --ext default` elenca file grandi e con
+  estensioni/nomi tipicamente sensibili (con dimensione, versioni, presenza nei tip). Produce solo
+  *suggerimenti* (`<label>-paths-suggested.txt`, righe `#> ...` non attive): decide l'utente (Fase 6).
+Un file eliminato sparisce da **tutta** la history, non solo dal tip. Mostra sempre all'utente l'elenco dei
+file che verranno eliminati prima di chiedere conferma.
+
 ## Regole obbligatorie (non derogabili)
 
-1. **Mai** riscrivere la history senza approvazione esplicita (frase esatta: `Confermo la riscrittura della history`).
-2. **Mai** eseguire un force push senza approvazione esplicita e separata.
+1. **Mai** riscrivere la history né fare force push senza il relativo **gate APPROVATO dall'utente** (vedi Gate).
+2. **Mai** modificare i file in `cleanup-reports/gates/` né eseguire `gate.sh approve`: l'approvazione la dà
+   solo l'utente, da un proprio terminale interattivo. Se un gate non è APPROVATO **fermati e attendi**.
 3. **Prima** di qualsiasi modifica crea sempre un backup completo (mirror) e verificalo.
 4. Dopo ogni bonifica **riesegui** la scansione dei secret.
-5. Se trovi credenziali, ricorda sempre che vanno considerate **compromesse** e **rigenerate**: la
-   riscrittura non le rende di nuovo sicure (cache, fork, cloni, CI log possono averle già copiate).
-6. Mai stampare valori dei secret in chiaro: nei report mascherali (es. `AKIA****MPLE`). I report vanno
-   in `./cleanup-reports/` (fuori dal repo bonificato) e non vanno mai committati.
-7. Lavora sempre su un clone/mirror di lavoro, **mai sul backup**. Il backup resta intatto.
-8. Se un gate non riceve conferma, o un prerequisito/permesso manca: **interrompi** e riferisci.
-9. **Ruota le credenziali live per prime** (o in parallelo): la bonifica non invalida un secret già esposto.
-10. Mai dedurre visibilità/fork dal nome o dall'URL: verificali (`check-visibility.sh`). Non dichiarare "pulito"
-    ciò che non hai verificato: distingui sempre **verificato / residuo / non verificato** per ogni superficie.
-11. Il push usa **lease per ref** (`--force-with-lease`), mai `--force` nudo né `--no-verify`. Se il lease è
-    rifiutato (il remoto è cambiato) **fermati**: rifare snapshot, analisi e approvazioni.
+5. Se trovi credenziali, ricorda sempre che vanno considerate **compromesse** e **rigenerate** (e ruotate per
+   prime): la riscrittura non le rende di nuovo sicure (cache, fork, cloni, CI log).
+6. Mai stampare valori dei secret in chiaro (gli script li mascherano). I report stanno in `./cleanup-reports/`
+   e non vanno mai committati.
+7. Lavora sempre su un mirror di lavoro, **mai sul backup**. Il backup resta intatto.
+8. Se un gate o un prerequisito/permesso manca: **interrompi** e riferisci.
+9. Mai dedurre visibilità/fork dal nome o dall'URL (`check-visibility.sh`). Non dichiarare "pulito" ciò che non
+   hai verificato: distingui **verificato / residuo / non verificato** per ogni superficie.
+10. Il push usa **lease per ref**, mai `--force` nudo né `--no-verify`. Lease rifiutato = il remoto è cambiato:
+    **fermati**, rifai snapshot, analisi e approvazioni.
+11. Non fidarti di un "falso positivo" senza averlo verificato: gli script mostrano il valore **mascherato**
+    (prime 2 lettere + lunghezza) e `file:riga`; non scartare finding in base a un `REDACTED` generico.
 
-Usa `ask_user` per ogni domanda/gate. Gli script in `scripts/` sono non distruttivi di default.
-Percorso script: la directory di questa skill (`SCRIPTS=<dir skill>/scripts`).
-Dettagli e comandi per fase: `references/fasi.md`; ricette filter-repo: `references/filter-repo-recipes.md`;
-protezioni per provider: `references/branch-protection.md`; report finale: `references/report-template.md`.
+## Gate di sicurezza (file Markdown con stato)
+
+Ogni passo critico produce un file `cleanup-reports/gates/<ID>.md` con stato **DA_LEGGERE** → **APPROVATO**
+(oppure RIFIUTATO) e l'hash degli artefatti da leggere. Gli script distruttivi controllano il gate con
+`gate.sh require` e rifiutano di partire se non è APPROVATO **o se un artefatto è cambiato dopo l'approvazione**.
+
+| Gate | Creato da | Frase da digitare | Sblocca |
+|------|-----------|-------------------|---------|
+| `G1-backup` | `backup-mirror.sh` | `Confermo il backup` | push sul repo di backup (`--confirm`) |
+| `G2-protezioni` | `check-protections.sh` (se protezioni presenti/non verificabili) | `Confermo che le protezioni sono state rimosse o aggirate` | dry-run, rewrite, push |
+| `G3-classificazione` | tu, con `gate.sh create` (Fasi 6-7) | `Confermo la classificazione` | dry-run |
+| `G4-riscrittura` | `dry-run.sh` | `Confermo la riscrittura della history` | `rewrite.sh` |
+| `G5-push` | `push-cleaned.sh --prepare` | `Confermo il force push` (se repo pubblico/con fork/non verificato: `Confermo il force push su repository pubblico o non verificato`) | `push-cleaned.sh` |
+
+**Procedura per ogni gate**: (1) crea il gate con lo script; (2) di' all'utente il percorso del file `.md` e
+chiedigli di **leggerlo** (e degli artefatti elencati); (3) l'utente approva **da un proprio terminale**:
+`<dir-skill>/scripts/gate.sh approve <ID>` e digita la frase esatta (richiede TTY: l'agente non può farlo);
+(4) attendi che l'utente confermi di aver approvato, poi verifica con `gate.sh status` e prosegui.
+Se l'utente non vuole procedere: `gate.sh reject <ID>`. Se artefatti o regole cambiano dopo l'approvazione, il
+gate va ricreato e riapprovato.
+
+Gate G3 (classificazione), da creare dopo le Fasi 6-7:
+```bash
+gate.sh create G3-classificazione --title "Classificazione e regole" --phrase "Confermo la classificazione" \
+  --artifact paths-to-remove.txt --artifact replacements.txt --artifact keep-list.txt --artifact pre-findings.tsv \
+  --summary "<riepilogo: cosa verrà eliminato/sostituito/preservato>"
+```
+
+## Dove si lavora
+Lancia gli script dalla **cartella di lavoro** (vuota, es. `~/cleanup-work`), non dal repo da bonificare e non
+da dentro `cleanup-reports/` (se serve, gli script lo riconoscono). Gli script scrivono in `./cleanup-reports/`.
+Script: `<dir-skill>/scripts`. Dettagli: `references/fasi.md`; ricette filter-repo: `references/filter-repo-recipes.md`;
+protezioni: `references/branch-protection.md`; report finale: `references/report-template.md`.
+Stato in `./cleanup-reports/state.env`. La sessione può essere ripresa: `backup-mirror.sh` riusa il mirror
+esistente (se coincide ancora col sorgente) e i gate già approvati e invariati restano validi. Non cancellare
+mirror o gate a mano per "ripartire": se il sorgente è cambiato lo script lo dice.
 
 ## Workflow
 
-Tieni traccia dello stato (fase corrente, percorsi, scelte) in `./cleanup-reports/state.env`.
-
 ### FASE 0 – Repository Assessment
-Chiedi (se non noti): URL repo sorgente, URL repo backup, branch principale, provider
-(GitHub / GitLab / Azure DevOps / Bitbucket). Esegui `scripts/assess-repo.sh [path]` (git remote -v,
-git branch -a, git tag, default branch). Produci report: remote, branch locali, branch remoti, tag, default branch.
+Chiedi (se non noti): URL repo sorgente (**URL, non path locale**), URL repo backup (vuoto e privato), branch
+principale, provider. Esegui `assess-repo.sh [path]` se esiste un clone. Report: remote, branch, tag, default branch.
 
 ### FASE 1 – Prerequisiti
-Esegui `scripts/check-prereqs.sh`. Tool: `git`, `gitleaks` (>= 8.19, comando `gitleaks git`),
-`trufflehog` (binario Go ufficiale, **non** `pip install trufflehog`), `git-filter-repo`, `jq`.
-Se manca qualcosa **proponi** il comando di installazione (brew / apt / release ufficiale) e
-**chiedi conferma** prima di eseguirlo. Non installare in autonomia.
+`check-prereqs.sh`. Tool: `git`, `gitleaks` (>= 8.19), `trufflehog` (binario Go ufficiale, **non** `pip install
+trufflehog`), `git-filter-repo`, `jq`, `python3`, `curl`; `gh` opzionale. Se manca qualcosa **proponi** il comando
+e **chiedi conferma** prima di installare.
 
 ### FASE 2 – Verifica accessi
-Verifica: clone/lettura sorgente (`git ls-remote`), creazione repo di backup, push, e possibilità di
-force push (provider/permessi: vedi references). Se i permessi sono insufficienti **interrompi**.
-Non eseguire force push di test sul sorgente reale.
-Esegui `scripts/check-visibility.sh <URL>` (GitHub, via `gh`): visibilità e numero di fork. Exit 10 = pubblico/con fork:
-informa l'utente dei rischi (fork e cloni conservano la vecchia history) e raccogli il suo consenso esplicito.
-Verifica la **proprietà** di fork/account prima di scegliere la via di remediation (self-service vs supporto provider):
-non fidarti di etichette in report precedenti.
+Lettura sorgente, backup raggiungibile, permessi di push/force push (non fare force push di prova sul sorgente).
+`check-visibility.sh <URL>`: exit 10 = pubblico/con fork → informa l'utente (fork e cloni conservano la vecchia
+history). Verifica la **proprietà** di fork/account prima di scegliere la via di remediation.
 
-### FASE 3 – Backup completo  (GATE: conferma utente)
-`scripts/backup-mirror.sh <SOURCE> <BACKUP> [--confirm]` → `git clone --mirror`, verifica branch/tag/refs,
-`git push --mirror` sul repo di backup (senza `--confirm` esegue solo il mirror locale e la verifica).
-Il repo di backup deve esistere vuoto e **privato**. Su GitHub/Azure DevOps i ref `refs/pull/*` non sono
-pushabili: lo script li esclude e lo segnala. Conferma all'utente il completamento con i conteggi.
-Lo script salva anche il **preimage** dei ref remoti (`remote-preimage.txt`, SHA di branch/tag) usato come lease al push:
-non ripeterlo dopo la riscrittura. URL con credenziali incorporate sono rifiutati (usa il credential helper).
+### FASE 3 – Backup completo  (GATE G1)
+`backup-mirror.sh <SOURCE> <BACKUP>`: mirror locale verificato, `backup-summary.md`, preimage dei ref remoti
+(`remote-preimage.txt`, base del lease) e gate G1. Dopo l'approvazione dell'utente:
+`backup-mirror.sh <SOURCE> <BACKUP> --confirm` pubblica heads+tags sul backup (i `refs/pull/*` non sono
+pushabili) e verifica ref per ref. URL con credenziali incorporate sono rifiutati.
 
-### FASE 4 – Analisi protezioni
-Verifica protected branches, push restrictions, required approvals, PR checks (references/branch-protection.md).
-Se presenti: **fermati** e chiedi di rimuoverle temporaneamente. Non procedere finché l'utente non conferma.
+### FASE 4 – Analisi delle protezioni  (GATE G2 se presenti)
+`check-protections.sh <URL>` (GitHub: branch protette e ruleset con regole e bypass). Exit 10/2 = protezioni
+presenti o non verificabili → crea G2: **fermati** finché l'utente non le rimuove/aggira e approva G2.
+Se la riscrittura tocca il branch di default (di solito sì: è antenato di tutti i branch) i ruleset sul default
+branch impediranno il push.
 
 ### FASE 5 – Secret Discovery
-`scripts/scan-secrets.sh <repo> <label>` esegue `gitleaks git` e `trufflehog git file://<repo>` con report JSON.
-`scripts/summarize-findings.sh <repo> <label>` produce tabella: tipo, file, commit, autore, gravità, branch coinvolti (valori mascherati).
-`scripts/scan-patterns.sh <repo> <label> [--patterns-file F]` cerca contesto privato che gitleaks non copre
-(IP privati, chiavi PEM, + regole utente: domini interni, PII; vedi `references/patterns.example`). Mostra solo
-posizioni, mai i valori. Falsi positivi gitleaks: `GITLEAKS_CONFIG=<toml>` (vedi `references/gitleaks.example.toml`),
-solo dopo verifica manuale.
+`scan-secrets.sh <mirror> pre` (gitleaks + trufflehog, anche su mirror bare; valori mascherati) e
+`summarize-findings.sh <mirror> pre` (tipo, file:riga, commit, autore, gravità, valore mascherato, branch).
+`scan-patterns.sh <mirror> pre [--patterns-file F]`: contesto privato che gitleaks non vede (IP privati, PEM,
+regole utente: `references/patterns.example`). Falsi positivi verificati: `GITLEAKS_CONFIG=<toml>`
+(`references/gitleaks.example.toml`).
 
 ### FASE 5b – Revisione semantica (Layer 4)
-Le regex non vedono nomi reali, codename, trascrizioni, topologie interne, PII in fixture. Esegui
-`scripts/semantic-review-inventory.sh <repo> <label>` (congela ref e file) e applica
-`references/ai_semantic_review_prompt.md` **anche al materiale senza hit**. Registra risultati e copertura fuori
-dal repo; ciò che non ispezioni è *non verificato*, non *pulito*. Nuovi valori/path → regole (Fase 7), poi dry-run.
+`semantic-review-inventory.sh <mirror> pre` congela ref e file; applica
+`references/ai_semantic_review_prompt.md` **anche al materiale senza hit** (nomi reali, codename, host interni,
+PII in fixture, codici fiscali, trascrizioni). Ciò che non ispezioni è *non verificato*.
+
+### FASE 5c – Scoperta file da eliminare
+`scan-files.sh <mirror> pre --min-size 5M --ext default` (file grandi, estensioni/nomi sensibili). Presenta i
+candidati all'utente: sono suggerimenti, non regole.
 
 ### FASE 6 – Classification
 Mostra secret, file, branch. Per **ogni** elemento chiedi l'azione:
 A. Eliminare completamente il file · B. Sostituire il valore sensibile · C. Escludere dalla bonifica · D. Mantenere invariato.
-Ricorda: i secret sono comunque da rigenerare (anche per C/D).
+Ricorda: i secret vanno comunque rigenerati (anche per C/D).
 
-### FASE 7 – Esclusioni
-Chiedi quali file preservare (es. `README.md`, `CHANGELOG.md`, `LICENSE`, `docs/architecture.md`).
-Crea prima della riscrittura: `paths-to-remove.txt` (A), `replacements.txt` (B, formato
-`literal==>***REMOVED***` o `regex:...==>...`), `keep-list.txt` (esclusioni). Una regola che colpisce un file
-in `keep-list.txt` è un conflitto: segnalalo e chiedi.
+### FASE 7 – Esclusioni e regole  (crea GATE G3)
+Chiedi quali file preservare. Crea: `paths-to-remove.txt` (A), `replacements.txt` (B: `literal==>repl` o
+`regex:...==>repl`), `keep-list.txt` (C/D). "Preservare" significa **non eliminare e non modificare**: una regola
+che elimina o modifica un file in keep-list è un conflitto (exit 3); l'utente decide se togliere la regola, restringerla
+o accettare la modifica (`--allow-keep-modified`). Un `paths-to-remove.txt` senza regole attive è tollerato.
+Crea il gate G3 (vedi sopra) e attendi l'approvazione.
 
 ### FASE 8 – Impact Analysis
-Determina file, commit, branch e tag coinvolti (`git log --all -- <path>`, `git tag --contains`,
-`git branch -a --contains`). Report dettagliato.
+Il dry-run produce `dryrun-report.md`: file eliminati, file il cui contenuto cambia, commit, branch e tag
+riscritti, avviso se il **branch di default** viene riscritto.
 
-### FASE 9 – Dry Run
-`scripts/dry-run.sh <backup-mirror> <work-dir> --paths paths-to-remove.txt --replace replacements.txt --keep keep-list.txt`: clona in una copia usa-e-getta ed esegue `git filter-repo ... --dry-run`
-con le regole approvate (mai l'esempio `--path-glob '*.md' --invert-paths`, è solo illustrativo).
-Mostra file, commit, branch, tag interessati (`.git/filter-repo/fast-export.*`, `ref-map`, `commit-map`).
-Nessuna modifica reale.
+### FASE 9 – Dry Run  (richiede G3, crea G4)
+`dry-run.sh <mirror> <work> --paths paths-to-remove.txt --replace replacements.txt --keep keep-list.txt
+[--max-blob-size 5M] [--no-message-rewrite] [--allow-keep-modified]`. Nessuna modifica reale.
 
-### FASE 10 – Approvazione  (GATE)
-Mostra il risultato del dry-run e chiedi di digitare esattamente:
-`Confermo la riscrittura della history`. Se la frase non arriva o è diversa: **interrompi**.
-Solo dopo passa la frase a `rewrite.sh --approval`. Non pre-compilare mai la frase al posto dell'utente.
+### FASE 10 – Approvazione  (GATE G4)
+Di' all'utente di leggere `gates/G4-riscrittura.md` e `dryrun-report.md` e di approvare da terminale
+(`Confermo la riscrittura della history`). Senza G4 APPROVATO **non procedere**.
 
-### FASE 11 – Bonifica reale
-`scripts/rewrite.sh <backup-mirror> <work-dir> --approval "Confermo la riscrittura della history" --paths paths-to-remove.txt --replace replacements.txt`
-— rifiuta di girare senza frase esatta, senza dry-run o se le regole sono cambiate dopo il dry-run (hash).
-Clona un mirror **fresco** di lavoro (filter-repo lo richiede) e non modifica mai il backup.
-Esempi: `--invert-paths --paths-from-file`, `--replace-text`. Vedi ricette.
-Di default riscrive **anche i messaggi di commit** (`--replace-message` con lo stesso file di regole): un'entità
-sensibile può comparire nei messaggi. Disattivabile con `--no-message-rewrite` (da passare identico a dry-run e rewrite).
+### FASE 11 – Bonifica reale  (richiede G4)
+`rewrite.sh <mirror> <work2> --paths ... --replace ... [--max-blob-size ...]` (stessi parametri del dry-run:
+l'hash delle regole deve coincidere). Clona un mirror **fresco** di lavoro; il backup non viene mai modificato.
+Riscrive anche i **messaggi di commit** (`--no-message-rewrite` per disattivare, identico al dry-run).
 
 ### FASE 12 – Pulizia
-`git reflog expire --expire=now --all` e `git gc --prune=now --aggressive` (eseguiti da `rewrite.sh`).
+`reflog expire --expire=now --all` e `gc --prune=now --aggressive` (eseguiti da `rewrite.sh`).
 
 ### FASE 13 – Verifica post cleanup
-`scripts/verify-final.sh <repo> post-cleanup --removed paths-to-remove.txt --replace replacements.txt --keep keep-list.txt --baseline <backup-mirror> [--patterns-file F]`: rieseguire
-`gitleaks git` e `trufflehog git` + pattern custom, verificare che i secret siano spariti (anche dai **messaggi di commit**), i file rimossi assenti dalla
-history, le esclusioni preservate. Genera report finale. Se restano finding: **non procedere al push**.
+`verify-final.sh <work2> post-cleanup --removed paths-to-remove.txt --replace replacements.txt --keep keep-list.txt
+--baseline <mirror> [--patterns-file F]`: rescan, pattern custom, file rimossi assenti, valori sostituiti assenti
+(file e messaggi), esclusioni preservate. Se restano finding: **non procedere al push**.
 
 ### FASE 13b – Revisione semantica sui ref riscritti
-Ripeti la Fase 5b sui ref riscritti (stesso scope di lavoro) prima del push: pattern puliti non bastano.
+Ripeti la 5b sul risultato (pattern puliti non bastano).
 
-### FASE 14 – Push  (GATE separato)
-Chiedi approvazione esplicita al force push mostrando remote, ref e l'esito di `check-visibility.sh`; l'utente deve scrivere `Confermo il force push`. Solo dopo:
-`scripts/push-cleaned.sh <work-dir> <REMOTE_URL> --approval "Confermo il force push" [--ack-exposure]`
-(richiede verify post-cleanup OK e il preimage della Fase 3 sullo **stesso URL**; `--ack-exposure` solo se l'utente ha
-accettato esplicitamente repo pubblico/con fork/visibilità non verificata). Reimposta `origin` (filter-repo lo rimuove)
-e pubblica branch e tag con `--force-with-lease=<ref>:<sha-preimage>` per ciascun ref: equivalente di
-`git push origin --force --all/--tags` ma rifiutato se il remoto è cambiato dopo lo snapshot. Nessun fallback a `--force`.
-Branch eliminati dalla riscrittura non vengono rimossi dal remoto: segnalalo e proponi cancellazione esplicita (con approvazione).
+### FASE 14 – Push sul repository ORIGINALE  (GATE G5)
+`push-cleaned.sh <work2> <REMOTE_URL> --prepare` → `push-plan.md` (visibilità/fork, protezioni, ref da forzare /
+nuovi / invariati, ref orfani) e gate G5. Dopo l'approvazione dell'utente: `push-cleaned.sh <work2> <REMOTE_URL>`.
+Pubblica solo i ref cambiati, ciascuno con `--force-with-lease=<ref>:<sha-preimage>`; reimposta `origin`
+(filter-repo lo rimuove). L'URL deve coincidere con quello dello snapshot. Branch eliminati dalla riscrittura NON
+vengono rimossi dal remoto: elencali e cancellali solo con approvazione.
 
 ### FASE 15 – Verifica post push
-Nuovo clone fresco del remoto (`git clone <REPO>`), rieseguire `scripts/verify-final.sh <clone> post-push --removed ... --keep ... --baseline <backup-mirror>`.
-Poi `scripts/verify-anonymous.sh <REMOTE_URL>`: senza credenziali verifica se il repo è leggibile e se i vecchi commit
-sono ancora raggiungibili (HTTP 200/404). Su repo privati un 404 non prova nulla; un 200 è un'esposizione **residua**
-(cache, oggetti orfani, PR/fork), non un errore di bonifica. Riporta le superfici separatamente (vedi report-template):
-file correnti e testo ospitato · oggetti e ref Git · cronologia modifiche del body delle PR · cache/PR refs/fork/cloni.
-I fork di terzi e le copie esterne non sono rimovibili da noi: percorso supporto provider / cooperazione dei proprietari.
+Clone fresco del remoto → `verify-final.sh <clone> post-push ...`; poi `verify-anonymous.sh <REMOTE_URL>` (lettura
+anonima e raggiungibilità dei vecchi commit). Riporta le superfici separatamente (file correnti/testo ospitato ·
+oggetti e ref Git · cronologia modifiche delle PR · cache/PR refs/fork/cloni). Un 200 sui vecchi commit è
+un'esposizione **residua** (richiesta al supporto del provider), non un errore di bonifica.
 
 ### FASE 16 – Checklist finale
-- Riattivare le branch protection.
-- **Rigenerare tutte le credenziali esposte** (considerarle compromesse).
-- Eliminare il repo di backup quando non più necessario (contiene i secret!).
-- Avvisare il team: nuovo clone obbligatorio (no pull/merge dei vecchi cloni).
-- Chiudere e ricreare le Pull Request impattate.
+- Riattivare le branch protection / ruleset.
+- **Rigenerare tutte le credenziali esposte**.
+- Eliminare il repo di backup e la cartella di lavoro (contengono i secret originali).
+- Avvisare il team: nuovo clone obbligatorio. Chiudere/ricreare le PR impattate.
 
 ## Output finale atteso
-Usa `references/report-template.md`: repository analizzato, repository backup, n. branch coinvolti,
-n. tag coinvolti, n. secret trovati, n. secret rimossi, file rimossi, file preservati, stato verifica
-finale, azioni manuali richieste.
+`references/report-template.md`: repository analizzato, backup, n. branch/tag coinvolti, n. secret trovati/rimossi,
+file rimossi, file preservati, stato verifica finale, stato dei gate, superfici di esposizione, azioni manuali.

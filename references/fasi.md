@@ -5,14 +5,25 @@ Tutti gli script scrivono in `./cleanup-reports/` (override: `CLEANUP_REPORTS=/p
 | Fase | Comando |
 |------|---------|
 | 0 | `scripts/assess-repo.sh [path]` — equivale a `git remote -v`, `git branch -a`, `git tag` |
-| 1 | `scripts/check-prereqs.sh` — `git --version`, `gitleaks version`, `trufflehog --version`, `git filter-repo --version` |
-| 2-3 | `scripts/backup-mirror.sh <SRC> <BKP>` poi, dopo conferma, `... --confirm` |
-| 5 | `scripts/scan-secrets.sh <mirror> pre-cleanup` + `scripts/summarize-findings.sh <mirror> pre-cleanup` |
-| 9 | `scripts/dry-run.sh <mirror> <work> --paths P --replace R --keep K` |
-| 11-12 | `scripts/rewrite.sh <mirror> <work> --approval "Confermo la riscrittura della history" --paths P --replace R` |
-| 13 | `scripts/scan-secrets.sh` + `scripts/verify-final.sh <work> post-cleanup ...` |
-| 14 | vedi sotto |
-| 15 | `git clone <REPO> verify-clone` + `scripts/verify-final.sh verify-clone post-push ...` |
+| 1 | `scripts/check-prereqs.sh` |
+| 2 | `scripts/check-visibility.sh <URL>` |
+| 3 | `scripts/backup-mirror.sh <SRC> <BKP>` → gate G1 → `... --confirm` |
+| 4 | `scripts/check-protections.sh <URL>` → gate G2 se presenti |
+| 5 | `scripts/scan-secrets.sh <mirror> pre` · `summarize-findings.sh` · `scan-patterns.sh` · `semantic-review-inventory.sh` |
+| 5c | `scripts/scan-files.sh <mirror> pre --min-size 5M --ext default` |
+| 7 | `gate.sh create G3-classificazione ...` |
+| 9 | `scripts/dry-run.sh <mirror> <work> --paths P --replace R --keep K [--max-blob-size 5M]` → gate G4 |
+| 11-12 | `scripts/rewrite.sh <mirror> <work2> --paths P --replace R` (richiede G4 approvato) |
+| 13 | `scripts/verify-final.sh <work2> post-cleanup ...` |
+| 14 | `scripts/push-cleaned.sh <work2> <URL> --prepare` → gate G5 → `scripts/push-cleaned.sh <work2> <URL>` |
+| 15 | `git clone <URL> verify-clone` + `verify-final.sh` + `scripts/verify-anonymous.sh <URL>` |
+
+## Gate (file Markdown con stato)
+`scripts/gate.sh create|status|require|approve|reject`. File in `cleanup-reports/gates/<ID>.md`, stati
+`DA_LEGGERE` → `APPROVATO` (o `RIFIUTATO`). `approve` funziona solo da terminale interattivo (TTY) e richiede
+di digitare la frase esatta: l'agente non può approvare. `require` fallisce (exit 4) se il gate non è APPROVATO
+o se un artefatto è cambiato dopo l'approvazione. Un `create` con stessi artefatti e frase su un gate già
+APPROVATO lo lascia invariato (utile per riprendere una sessione).
 
 ## Installazione tool (solo dopo conferma utente)
 - gitleaks: `brew install gitleaks` · `sudo apt install gitleaks` · release ufficiale (>= 8.19)
@@ -44,7 +55,7 @@ git log --all -S'<valore>' --oneline        # occorrenze di un valore
 ```
 
 ## Fase 14: push con lease (dopo approvazione esplicita)
-Script: `scripts/push-cleaned.sh <work> <URL> --approval "Confermo il force push" [--ack-exposure]`.
+Script: `scripts/push-cleaned.sh <work> <URL> --prepare` (piano + gate G5), poi `scripts/push-cleaned.sh <work> <URL>` dopo l'approvazione dell'utente. Pubblica solo i ref cambiati o nuovi.
 Prima della riscrittura (Fase 3) `snapshot-remote.sh <URL>` salva `remote-preimage.txt` (`<sha> <ref>`).
 Il push equivale a (un lease per ogni ref; sha vuoto = il ref non deve esistere sul remoto):
 ```bash
@@ -65,7 +76,7 @@ Con `safe.bareRepository=explicit` usare `git --git-dir=<work> ...`.
 ## Visibilità e fork (Fase 2/14)
 `scripts/check-visibility.sh <URL>`: `gh repo view <owner>/<repo> --json visibility,forkCount,isFork,isArchived`.
 Exit 0 = privato senza fork (o provider non GitHub: da verificare a mano), 10 = pubblico/con fork, 2 = verifica impossibile.
-`push-cleaned.sh` richiede `--ack-exposure` per exit ≠ 0.
+Se exit ≠ 0 la frase del gate G5 diventa `Confermo il force push su repository pubblico o non verificato`.
 
 ## Verifica anonima (Fase 15)
 `scripts/verify-anonymous.sh <URL> [--commits F | --sha SHA]`: senza credenziali prova `git ls-remote` e

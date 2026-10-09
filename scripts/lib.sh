@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Funzioni comuni. Uso: source "$(dirname "$0")/lib.sh"
 
+# Se si lavora già dentro cleanup-reports/ non annidare un secondo cleanup-reports/
+if [ -z "${CLEANUP_REPORTS:-}" ] && [ "$(basename "$PWD")" = "cleanup-reports" ]; then CLEANUP_REPORTS="$PWD"; fi
 REPORT_DIR="$(realpath -m "${CLEANUP_REPORTS:-$PWD/cleanup-reports}")"
 mkdir -p "$REPORT_DIR"
 chmod 700 "$REPORT_DIR" 2>/dev/null || true
@@ -37,25 +39,36 @@ count_refs() { # <repo> <prefix>
 }
 
 # Costruisce FR_ARGS (argomenti git filter-repo) da file di regole; ignora righe vuote e commenti '#'.
-# Uso: build_fr_args <paths-file|""> <replace-file|"">
+# Uso: build_fr_args <paths-file|""> <replace-file|"">     (variabili: REPLACE_MESSAGES=1|0, MAX_BLOB=<size>)
+# Un paths-file senza regole attive viene ignorato (nessun file da eliminare).
 build_fr_args() {
   FR_ARGS=()
   if [ -n "${1:-}" ]; then
-    [ -s "$1" ] || die "File regole vuoto o inesistente: $1"
-    grep -Ev '^\s*(#|$)' "$1" > "$REPORT_DIR/paths.clean"
-    FR_ARGS+=(--invert-paths --paths-from-file "$REPORT_DIR/paths.clean")
+    [ -f "$1" ] || die "File regole inesistente: $1"
+    grep -Ev '^\s*(#|$)' "$1" > "$REPORT_DIR/paths.clean" || true
+    if [ -s "$REPORT_DIR/paths.clean" ]; then
+      FR_ARGS+=(--invert-paths --paths-from-file "$REPORT_DIR/paths.clean")
+    else
+      warn "$1 non contiene regole attive: nessun file verrà eliminato per path"
+    fi
   fi
   if [ -n "${2:-}" ]; then
-    [ -s "$2" ] || die "File regole vuoto o inesistente: $2"
-    grep -Ev '^\s*(#|$)' "$2" > "$REPORT_DIR/replace.clean"
-    FR_ARGS+=(--replace-text "$REPORT_DIR/replace.clean")
-    # Di default riscrive anche i messaggi di commit (stesso file di regole)
-    [ "${REPLACE_MESSAGES:-1}" = "1" ] && FR_ARGS+=(--replace-message "$REPORT_DIR/replace.clean")
+    [ -f "$2" ] || die "File regole inesistente: $2"
+    grep -Ev '^\s*(#|$)' "$2" > "$REPORT_DIR/replace.clean" || true
+    if [ -s "$REPORT_DIR/replace.clean" ]; then
+      FR_ARGS+=(--replace-text "$REPORT_DIR/replace.clean")
+      # Di default riscrive anche i messaggi di commit (stesso file di regole)
+      [ "${REPLACE_MESSAGES:-1}" = "1" ] && FR_ARGS+=(--replace-message "$REPORT_DIR/replace.clean")
+    else
+      warn "$2 non contiene regole attive: nessuna sostituzione"
+    fi
   fi
-  [ "${#FR_ARGS[@]}" -gt 0 ] || die "Servono --paths e/o --replace"
+  # Elimina dalla history ogni file (blob) più grande della soglia, es. 5M
+  [ -z "${MAX_BLOB:-}" ] || FR_ARGS+=(--strip-blobs-bigger-than "$MAX_BLOB")
+  [ "${#FR_ARGS[@]}" -gt 0 ] || die "Nessuna regola attiva: servono --paths, --replace e/o --max-blob-size"
 }
 
 # Hash delle regole approvate (collega dry-run e rewrite)
 rules_hash() { # <paths|""> <replace|"">
-  { [ -n "${1:-}" ] && cat "$1"; [ -n "${2:-}" ] && cat "$2"; echo "msg=${REPLACE_MESSAGES:-1}"; } | sha256sum | cut -d' ' -f1
+  { [ -n "${1:-}" ] && cat "$1"; [ -n "${2:-}" ] && cat "$2"; echo "msg=${REPLACE_MESSAGES:-1} maxblob=${MAX_BLOB:-}"; } | sha256sum | cut -d' ' -f1
 }
