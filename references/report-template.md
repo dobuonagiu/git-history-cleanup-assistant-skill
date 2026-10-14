@@ -7,6 +7,8 @@
 | Branch coinvolti | N (elenco) |
 | Tag coinvolti | N (elenco) |
 | Secret trovati (pre-cleanup) | N (gitleaks: n, trufflehog: n) |
+| Campi di configurazione candidati (pre-cleanup) | N (`*-config-candidates.tsv`, classificati/non classificati) |
+| Copertura semantica pre-cleanup | N blob testuali / N commit / N ref; file grandi/binari non verificati: elenco |
 | Secret rimossi | N |
 | File rimossi | elenco |
 | File preservati (keep-list) | elenco |

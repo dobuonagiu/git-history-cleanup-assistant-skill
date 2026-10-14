@@ -55,6 +55,20 @@ file segnaposto (`.gitkeep`, `.keep`, ...) **non è vuota per git** e resta: il 
     **fermati**, rifai snapshot, analisi e approvazioni.
 11. Non fidarti di un "falso positivo" senza averlo verificato: gli script mostrano il valore **mascherato**
     (prime 2 lettere + lunghezza) e `file:riga`; non scartare finding in base a un `REDACTED` generico.
+12. Prima della classificazione, inventaria e rivedi **tutti i blob distinti raggiungibili nella history**, non
+    solo i tip dei branch. Non dichiarare completa la scansione se esistono file grandi/binari non ispezionati o
+    candidate di configurazione non classificati.
+13. Considera credenziale ogni valore statico in un campo `password`, `username`, `secret`, `token` o URI con
+    user-info, anche se ha bassa entropia, è in YAML/Properties/JSON, è codificato come escape o non è rilevato
+    da Gitleaks/TruffleHog. Cerca esplicitamente Redis, Kafka/JAAS, MongoDB, SQL, AMQP, SMTP, LDAP, OAuth/JWT,
+    cloud credentials, container registry, TLS e SSH.
+14. Non arrivare a G3 con la revisione semantica descritta solo come "automatica" o con categorie non
+    verificate: tutti i candidate del report e tutte le versioni di configurazione storiche devono essere
+    esaminati e classificati; aggiungi i report di copertura e candidate agli artefatti del gate.
+15. La scansione Git non include il contenuto esterno dei submodule o degli oggetti Git LFS, né garantisce
+    accesso a PR refs, cache, log CI, artifact, wiki, release, package, issue, fork e cloni. Identifica queste
+    superfici e dichiarale verificate, residue o NON VERIFICATE; non dichiarare pulito il repository nel suo
+    complesso se restano fuori scope.
 
 ## Gate di sicurezza (file Markdown con stato)
 
@@ -86,6 +100,7 @@ Gate G3 (classificazione), da creare dopo le Fasi 6-7:
 ```bash
 gate.sh create G3-classificazione --title "Classificazione e regole" --phrase "Confermo la classificazione" \
   --artifact paths-to-remove.txt --artifact replacements.txt --artifact keep-list.txt --artifact pre-findings.tsv \
+  --artifact cleanup-reports/pre-config-candidates.tsv --artifact cleanup-reports/pre-semantic-review.md \
   --summary "<riepilogo: cosa verrà eliminato/sostituito/preservato>"
 ```
 
@@ -132,11 +147,20 @@ branch impediranno il push.
 `scan-patterns.sh <mirror> pre [--patterns-file F]`: contesto privato che gitleaks non vede (IP privati, PEM,
 regole utente: `references/patterns.example`). Falsi positivi verificati: `GITLEAKS_CONFIG=<toml>`
 (`references/gitleaks.example.toml`).
+Esegui anche `scan-config-candidates.sh <mirror> pre`: cerca in tutte le modifiche storiche campi credenziale
+generici, escaped JSON, URI con user-info e configurazioni Redis/Kafka. Il report mostra solo categoria,
+commit e path, mai il valore. Ogni risultato è un candidato da ispezionare, non prova da solo che il valore
+sia attivo; include anche le differenze dei merge commit e classifica tutti i risultati prima di G3.
 
 ### FASE 5b – Revisione semantica (Layer 4)
 `semantic-review-inventory.sh <mirror> pre` congela ref e file; applica
 `references/ai_semantic_review_prompt.md` **anche al materiale senza hit** (nomi reali, codename, host interni,
 PII in fixture, codici fiscali, trascrizioni). Ciò che non ispezioni è *non verificato*.
+L'inventario contiene ogni blob testuale distinto raggiungibile (incluse versioni storiche e ref non default)
+e l'elenco dei commit da rivedere: non scegliere una sola versione per path. File esclusi per dimensione o
+binarietà restano NON VERIFICATI e vanno esaminati con metodo/tool adeguato o rimossi se sensibili. Gli
+oggetti LFS e il contenuto dei submodule richiedono scansione separata; le altre superfici remote sono
+rendicontate come verificate, residue o non verificate.
 
 ### FASE 5c – Scoperta file da eliminare
 `scan-files.sh <mirror> pre --min-size 5M --ext default` (file grandi, estensioni/nomi sensibili). Presenta i

@@ -9,7 +9,7 @@ Tutti gli script scrivono in `./cleanup-reports/` (override: `CLEANUP_REPORTS=/p
 | 2 | `scripts/check-visibility.sh <URL>` |
 | 3 | `scripts/backup-mirror.sh <SRC> <BKP>` → gate G1 → `... --confirm` |
 | 4 | `scripts/check-protections.sh <URL>` → gate G2 se presenti |
-| 5 | `scripts/scan-secrets.sh <mirror> pre` · `summarize-findings.sh` · `scan-patterns.sh` · `semantic-review-inventory.sh` |
+| 5 | `scripts/scan-secrets.sh <mirror> pre` · `summarize-findings.sh` · `scan-patterns.sh` · `scan-config-candidates.sh` · `semantic-review-inventory.sh` |
 | 5c | `scripts/scan-files.sh <mirror> pre --min-size 5M --ext default` |
 | 7 | `gate.sh create G3-classificazione ...` |
 | 9 | `scripts/dry-run.sh <mirror> <work> --paths P --replace R --keep K [--max-blob-size 5M]` → gate G4 |
@@ -86,8 +86,10 @@ Altri provider: `COMMIT_URL_TEMPLATE='https://host/.../<sha>'`.
 
 ## Pattern custom, allowlist, revisione semantica
 - `scripts/scan-patterns.sh <repo> <label> [--patterns-file F]` — formato `nome::regex`, esempi in `references/patterns.example`.
+- `scripts/scan-config-candidates.sh <repo> <label>` — candidati Redis/Kafka/JAAS, campi credenziale e URI con user-info attraverso tutte le modifiche storiche; report senza valori.
 - `GITLEAKS_CONFIG=<toml>` — allowlist per falsi positivi, esempio in `references/gitleaks.example.toml`.
 - `scripts/semantic-review-inventory.sh <repo> <label>` + `references/ai_semantic_review_prompt.md`.
+- L'inventario semantico elenca blob testuali distinti lungo tutta la history, non una sola versione per path.
 
 ## Test degli script
 `tests/run-tests.sh` (repo locali temporanei, scanner e `gh` finti, nessuna rete). Eseguito anche da GitHub Actions.

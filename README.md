@@ -135,7 +135,8 @@ viene registrata nel file (data, utente, modalità). `gate.sh status` mostra lo 
 - Controllo **visibilità e fork** (`gh`); repo pubblico/con fork richiede consenso esplicito.
 - Riscrittura anche dei **messaggi di commit**; verifica su file e messaggi.
 - Doppio scanner (gitleaks + trufflehog) + **pattern custom** (`references/patterns.example`) + allowlist gitleaks.
-- **Revisione semantica AI** (`references/ai_semantic_review_prompt.md`) prima e dopo la riscrittura.
+- Scansione aggiuntiva di campi credenziale statici (inclusi Redis/Kafka/JAAS, URI con user-info e chiavi JSON escaped), con report senza valori.
+- **Revisione semantica AI** (`references/ai_semantic_review_prompt.md`) su tutte le versioni storiche distinte dei file, prima e dopo la riscrittura.
 - **Verifica anonima** post-push e report per **superfici di esposizione** (verificato / residuo / non verificato).
 
 ## Test

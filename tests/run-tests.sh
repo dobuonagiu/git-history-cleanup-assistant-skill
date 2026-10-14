@@ -28,6 +28,10 @@ git init -q --bare -b main src.git; git init -q --bare -b main bkp.git
 git clone -q src.git w 2>/dev/null; cd w
 echo "hi README-TOKEN-XYZ" > README.md; mkdir cfg; echo 'AWS_KEY=AKIAIOSFODNN7EXAMPLE' > cfg/.env
 echo 'token = SECRETVALUE123' > app.py; echo 'host=10.1.2.3' > net.conf
+mkdir -p config
+printf 'spring.redis.host: redis.internal\nspring.redis.username: cache-user\nspring.redis.password: cache-pass-123\nspring.kafka.jaas.config: org.example required username=\\\\u0022kafka-user\\\\u0022 password=\\\\u0022kafka-pass-123\\\\u0022;\n' > config/application.yaml
+printf '%s\n' '\u0022password\u0022:\u0022escaped-pass-456\u0022' >> config/application.yaml
+printf '\0x' > tiny.bin
 head -c 1500000 /dev/urandom > big.bin; echo k > server.pem
 mkdir -p gone/x/y deep/a/b deep/a/other placeholder
 echo g > gone/x/y/z.txt; echo s > deep/a/b/secret.key; echo o > deep/a/other/keep.txt
@@ -104,8 +108,16 @@ t_ok "scan-patterns non stampa i valori" absent "$T/rep/pre-patterns.tsv" '10\.1
 printf 'my-host::host=10\\.1\n' > "$T/custom.pat"
 t_rc "scan-patterns con patterns-file" 1 "$S/scan-patterns.sh" "$MIRROR" pre2 --patterns-file "$T/custom.pat"
 t_ok "pattern custom rilevato" contains "$T/rep/pre2-patterns.tsv" 'my-host'
+t_ok "scan-config-candidates trova campi Redis/Kafka" "$S/scan-config-candidates.sh" "$MIRROR" config
+t_ok "...rileva campi Redis e JAAS" contains "$T/rep/config-config-candidates.tsv" 'redis-host-or-credential'
+t_ok "...rileva chiavi con escape Unicode" contains "$T/rep/config-config-candidates.tsv" 'escaped-json-credential-field'
+t_ok "...non stampa valori di configurazione" absent "$T/rep/config-config-candidates.tsv" 'kafka-pass-123'
+t_ok "...non stampa host o password rilevati" absent "$T/rep/config-config-candidates.tsv" 'redis.internal'
+t_ok "...non stampa password escaped" absent "$T/rep/config-config-candidates.tsv" 'escaped-pass-456'
 t_ok "inventario revisione semantica" "$S/semantic-review-inventory.sh" "$MIRROR" pre
 t_ok "scope include README.md" contains "$T/rep/pre-semantic-scope.md" 'README.md'
+t_ok "scope include versioni storiche distinte dello stesso path" test "$(grep -c 'app.py @' "$T/rep/pre-semantic-scope.md")" -ge 2
+t_ok "scope marca i piccoli file binari come non verificati" contains "$T/rep/pre-semantic-scope.md" 'tiny.bin (binario)'
 
 echo "== scoperta file (grandi / estensioni) =="
 t_ok "scan-files trova file grande" "$S/scan-files.sh" "$MIRROR" f --min-size 1M --ext default
