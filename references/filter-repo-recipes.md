@@ -26,7 +26,10 @@ git filter-repo --strip-blobs-bigger-than 5M          # tutti i blob > 5 MiB, ov
 git filter-repo --invert-paths --path-glob '*.pem' --path-glob '*.p12'
 ```
 Con gli script: `--max-blob-size 5M` in `dry-run.sh`/`rewrite.sh`, oppure regole `glob:*.pem` in `paths-to-remove.txt`.
-`scan-files.sh` elenca i candidati (suggerimenti non attivi).
+`scan-files.sh <mirror> pre --min-size <soglia> --ext <estensioni|default|none>` elenca i candidati per dimensione
+e/o formati scelti dall'utente (ad esempio `--min-size 20M --ext mp4,zip`). Mostrare l'intero report, chiedere quali
+file non eliminare e confermare la lista finale di rimozione prima di rendere attivi i path in
+`paths-to-remove.txt`; i candidati non sono regole automatiche. Aggiungere i report alla classificazione G3.
 
 ## B. Sostituire valori sensibili
 `replacements.txt`:

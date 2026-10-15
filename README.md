@@ -124,7 +124,11 @@ viene registrata nel file (data, utente, modalità). `gate.sh status` mostra lo 
 - **Valori sensibili** dentro i file e nei messaggi di commit (sostituzione).
 - **File interi** da tutta la history: per path, directory, `glob:` o `regex:` (es. `*.pem`, `.env`).
 - **File grandi**: `--max-blob-size 5M` elimina ogni file oltre la soglia.
-- `scan-files.sh` scopre file grandi e con estensioni/nomi sensibili e propone regole (mai attive senza la tua scelta).
+- `scan-files.sh` scopre file storici per soglia di dimensione e formati scelti dall'utente. La skill ti mostra
+  tutti i candidati, ti chiede quali preservare e conferma con te la lista esatta da rimuovere; nessuna regola
+  diventa attiva automaticamente. La soglia predefinita per file grandi è `50M` (50 MiB), modificabile.
+  Usa `--ext default` per formati/nomi sensibili comuni oppure un elenco come `zip,mp4,psd`;
+  `--ext none` e `--min-size 0` disattivano rispettivamente quel criterio.
 - **Cartelle**: git non traccia cartelle vuote, quindi se si eliminano tutti i file di una cartella spariscono anche
   la cartella e i genitori rimasti vuoti. Cartelle con soli segnaposto (`.gitkeep`…) restano: il dry-run le segnala.
 - File da **non toccare**: la keep-list; una regola che li elimina o li modifica è segnalata come conflitto.

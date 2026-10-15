@@ -10,7 +10,7 @@ Tutti gli script scrivono in `./cleanup-reports/` (override: `CLEANUP_REPORTS=/p
 | 3 | `scripts/backup-mirror.sh <SRC> <BKP>` → gate G1 → `... --confirm` |
 | 4 | `scripts/check-protections.sh <URL>` → gate G2 se presenti |
 | 5 | `scripts/scan-secrets.sh <mirror> pre` · `summarize-findings.sh` · `scan-patterns.sh` · `scan-config-candidates.sh` · `semantic-review-inventory.sh` |
-| 5c | `scripts/scan-files.sh <mirror> pre --min-size 5M --ext default` |
+| 5c | Proporre soglia default `50M` e chiedere i formati; `scripts/scan-files.sh <mirror> pre --min-size <soglia> --ext <elenco|default|none>`; mostrare tutti i candidati, chiedere quali preservare e confermare la lista da rimuovere |
 | 7 | `gate.sh create G3-classificazione ...` |
 | 9 | `scripts/dry-run.sh <mirror> <work> --paths P --replace R --keep K [--max-blob-size 5M]` → gate G4 |
 | 11-12 | `scripts/rewrite.sh <mirror> <work2> --paths P --replace R` (richiede G4 approvato) |
@@ -53,6 +53,17 @@ git branch -a --contains <sha>
 git tag --contains <sha>
 git log --all -S'<valore>' --oneline        # occorrenze di un valore
 ```
+
+## Fase 5c: selezione di file grandi e formati
+- Proporre soglia minima predefinita `50M` (50 MiB), chiedere se modificarla; `0` disattiva il criterio
+  dimensionale. Chiedere estensioni/formati (per
+  esempio `zip,mp4,psd`; `default` usa la lista comune; `none` disattiva il criterio per estensione).
+- Mostrare integralmente `cleanup-reports/pre-files.tsv`; lo script produce suggerimenti soltanto, non regole
+  attive.
+- Chiedere esplicitamente quali candidati preservare e confermare separatamente l'elenco esatto da rimuovere.
+  Aggiungere solo quelli confermati a `paths-to-remove.txt`; inserire i preservati in `keep-list.txt`.
+- Includere entrambi i report di scansione negli artefatti di G3. Non usare `--max-blob-size` per aggirare la
+  selezione individuale e le esclusioni.
 
 ## Fase 14: push con lease (dopo approvazione esplicita)
 Script: `scripts/push-cleaned.sh <work> <URL> --prepare` (piano + gate G5), poi `scripts/push-cleaned.sh <work> <URL>` dopo l'approvazione dell'utente. Pubblica solo i ref cambiati o nuovi.

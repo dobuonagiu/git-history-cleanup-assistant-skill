@@ -24,9 +24,16 @@ dopo l'approvazione dell'utente (gate G5). Il repo di backup è solo una copia d
   path esatto o directory (`cfg/.env`, `secrets/`), `glob:*.pem`, `regex:^deploy/keys/.*`.
 - **File per estensione o nome** (es. `*.pem`, `*.p12`, `.env`, `*.sqlite`): regole `glob:`/`regex:` come sopra.
 - **File grandi**: per soglia con `--max-blob-size 5M` (dry-run e rewrite) oppure per path specifico.
-- **Scoperta**: `scripts/scan-files.sh <repo> <label> --min-size 5M --ext default` elenca file grandi e con
-  estensioni/nomi tipicamente sensibili (con dimensione, versioni, presenza nei tip). Produce solo
-  *suggerimenti* (`<label>-paths-suggested.txt`, righe `#> ...` non attive): decide l'utente (Fase 6).
+- **Scoperta**: `scripts/scan-files.sh <repo> <label> --min-size <soglia> --ext <estensioni>` elenca i file
+  storici che raggiungono o superano la soglia e/o corrispondono ai formati indicati (con dimensione, versioni e presenza
+  nei tip). Produce solo *suggerimenti* (`<label>-paths-suggested.txt`, righe `#> ...` non attive).
+  Chiedi all'utente la soglia e le estensioni da cercare; `--ext default` usa i formati/nomi sensibili comuni,
+  La soglia predefinita è `50M` (50 MiB); chiedi se l'utente preferisce un valore diverso.
+  `--ext none` disattiva la ricerca per estensione e `--min-size 0` quella per dimensione.
+  Mostra l'elenco completo dei candidati e chiedi esplicitamente quali file **non** eliminare. Poi mostra
+  l'elenco finale dei file selezionati per la rimozione e chiedi conferma prima di aggiungerli a
+  `paths-to-remove.txt`; quelli da conservare vanno in `keep-list.txt`. Nessun candidato diventa una regola
+  attiva automaticamente.
 Un file eliminato sparisce da **tutta** la history, non solo dal tip. Mostra sempre all'utente l'elenco dei
 file che verranno eliminati prima di chiedere conferma.
 **Cartelle**: git non traccia cartelle vuote. Quando tutti i file di una cartella vengono eliminati, la cartella e
@@ -100,8 +107,9 @@ Gate G3 (classificazione), da creare dopo le Fasi 6-7:
 ```bash
 gate.sh create G3-classificazione --title "Classificazione e regole" --phrase "Confermo la classificazione" \
   --artifact paths-to-remove.txt --artifact replacements.txt --artifact keep-list.txt --artifact pre-findings.tsv \
+  --artifact cleanup-reports/pre-files.tsv --artifact cleanup-reports/pre-paths-suggested.txt \
   --artifact cleanup-reports/pre-config-candidates.tsv --artifact cleanup-reports/pre-semantic-review.md \
-  --summary "<riepilogo: cosa verrà eliminato/sostituito/preservato>"
+  --summary "<riepilogo: criteri dimensione/formato, candidati esclusi, cosa verrà eliminato/sostituito/preservato>"
 ```
 
 ## Dove si lavora
@@ -162,21 +170,35 @@ binarietà restano NON VERIFICATI e vanno esaminati con metodo/tool adeguato o r
 oggetti LFS e il contenuto dei submodule richiedono scansione separata; le altre superfici remote sono
 rendicontate come verificate, residue o non verificate.
 
-### FASE 5c – Scoperta file da eliminare
-`scan-files.sh <mirror> pre --min-size 5M --ext default` (file grandi, estensioni/nomi sensibili). Presenta i
-candidati all'utente: sono suggerimenti, non regole.
+### FASE 5c – Scoperta e selezione file grandi/per formato
+Prima della scansione chiedi all'utente:
+- la dimensione minima da considerare, proponendo `50M` come default (l'utente può scegliere un'altra soglia;
+  `0` disattiva il criterio dimensionale);
+- le estensioni/formati da cercare (es. `zip,mp4,psd`; `default` usa i formati e nomi sensibili comuni;
+  `none` disattiva il criterio per estensione).
+
+Esegui `scan-files.sh <mirror> pre --min-size <soglia> --ext <elenco|default|none>` e mostra
+`cleanup-reports/pre-files.tsv` integralmente, senza limitarti ai file nei tip: i risultati coprono tutti i
+blob/path nella history. Il report e `pre-paths-suggested.txt` sono solo candidati e non modificano la history.
+Chiedi esplicitamente quali candidati devono essere preservati/non eliminati; per gli altri chiedi conferma
+che vadano rimossi dalla history. Presenta infine la lista esatta da eliminare e attendi la conferma. Solo
+dopo inserisci i path confermati in `paths-to-remove.txt` e quelli da preservare in `keep-list.txt`.
+Un candidato non confermato per la rimozione resta fuori dalle regole; non usare mai `--max-blob-size` per
+eliminare in blocco quando l'utente ha selezionato singoli candidati o esclusioni.
 
 ### FASE 6 – Classification
-Mostra secret, file, branch. Per **ogni** elemento chiedi l'azione:
+Mostra secret, file (inclusi i candidati della Fase 5c) e branch. Per **ogni** elemento chiedi l'azione:
 A. Eliminare completamente il file · B. Sostituire il valore sensibile · C. Escludere dalla bonifica · D. Mantenere invariato.
-Ricorda: i secret vanno comunque rigenerati (anche per C/D).
+Per i candidati della Fase 5c, chiarisci quali non eliminare e richiedi conferma separata per la lista finale
+di rimozione. Ricorda: i secret vanno comunque rigenerati (anche per C/D).
 
 ### FASE 7 – Esclusioni e regole  (crea GATE G3)
 Chiedi quali file preservare. Crea: `paths-to-remove.txt` (A), `replacements.txt` (B: `literal==>repl` o
-`regex:...==>repl`), `keep-list.txt` (C/D). "Preservare" significa **non eliminare e non modificare**: una regola
+`regex:...==>repl`), `keep-list.txt` (C/D e candidati da non eliminare). "Preservare" significa **non eliminare e non modificare**: una regola
 che elimina o modifica un file in keep-list è un conflitto (exit 3); l'utente decide se togliere la regola, restringerla
 o accettare la modifica (`--allow-keep-modified`). Un `paths-to-remove.txt` senza regole attive è tollerato.
-Crea il gate G3 (vedi sopra) e attendi l'approvazione.
+Crea il gate G3 includendo anche `pre-files.tsv` e `pre-paths-suggested.txt` come artefatti di classificazione
+(vedi sopra) e attendi l'approvazione.
 
 ### FASE 8 – Impact Analysis
 Il dry-run produce `dryrun-report.md`: file eliminati, file il cui contenuto cambia, commit, branch e tag

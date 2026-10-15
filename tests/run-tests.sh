@@ -32,7 +32,7 @@ mkdir -p config
 printf 'spring.redis.host: redis.internal\nspring.redis.username: cache-user\nspring.redis.password: cache-pass-123\nspring.kafka.jaas.config: org.example required username=\\\\u0022kafka-user\\\\u0022 password=\\\\u0022kafka-pass-123\\\\u0022;\n' > config/application.yaml
 printf '%s\n' '\u0022password\u0022:\u0022escaped-pass-456\u0022' >> config/application.yaml
 printf '\0x' > tiny.bin
-head -c 1500000 /dev/urandom > big.bin; echo k > server.pem
+head -c 1500000 /dev/urandom > big.bin; echo k > server.pem; cp server.pem duplicate.pem
 mkdir -p gone/x/y deep/a/b deep/a/other placeholder
 echo g > gone/x/y/z.txt; echo s > deep/a/b/secret.key; echo o > deep/a/other/keep.txt
 echo old > placeholder/old.txt; : > placeholder/.gitkeep
@@ -120,13 +120,26 @@ t_ok "scope include versioni storiche distinte dello stesso path" test "$(grep -
 t_ok "scope marca i piccoli file binari come non verificati" contains "$T/rep/pre-semantic-scope.md" 'tiny.bin (binario)'
 
 echo "== scoperta file (grandi / estensioni) =="
+t_ok "scan-files usa 50M come soglia predefinita" "$S/scan-files.sh" "$MIRROR" fdefault --ext none
+t_ok "...il blob da 1.5M non supera il default" absent "$T/rep/fdefault-files.tsv" 'big.bin'
+t_ok "...report indica il default effettivo" contains "$T/rep/fdefault-paths-suggested.txt" 'Criterio dimensione minima: 50M'
 t_ok "scan-files trova file grande" "$S/scan-files.sh" "$MIRROR" f --min-size 1M --ext default
 t_ok "...big.bin per dimensione" contains "$T/rep/f-files.tsv" 'big.bin'
 t_ok "...server.pem per estensione" contains "$T/rep/f-files.tsv" 'server.pem'
 t_ok "...app.py non è candidato" absent "$T/rep/f-files.tsv" 'app.py'
 t_ok "suggerimenti NON attivi (commentati)" test -z "$(grep -Ev '^#' "$T/rep/f-paths-suggested.txt")"
 t_ok "scan-files con sola estensione" "$S/scan-files.sh" "$MIRROR" f2 --min-size 0 --ext pem
-t_ok "...solo .pem" test "$(tail -n +2 "$T/rep/f2-files.tsv" | wc -l)" = 1
+t_ok "...trova tutti i path anche con blob identici" test "$(tail -n +2 "$T/rep/f2-files.tsv" | wc -l)" = 2
+t_ok "...server.pem è candidato" contains "$T/rep/f2-files.tsv" 'server.pem'
+t_ok "...duplicate.pem è candidato" contains "$T/rep/f2-files.tsv" 'duplicate.pem'
+t_ok "scan-files normalizza formati con punto e maiuscole" "$S/scan-files.sh" "$MIRROR" f3 --min-size 0 --ext .PEM,.bin
+t_ok "...trova tutti i path nei formati richiesti" test "$(tail -n +2 "$T/rep/f3-files.tsv" | wc -l)" = 4
+t_ok "...registra i criteri nel report da approvare" contains "$T/rep/f3-paths-suggested.txt" 'Estensioni: pem,bin'
+t_ok "scan-files none disattiva il criterio per formato" "$S/scan-files.sh" "$MIRROR" f4 --min-size 0 --ext none
+t_ok "...nessun candidato quando i criteri sono disattivati" test "$(tail -n +2 "$T/rep/f4-files.tsv" | wc -l)" = 0
+t_fail "scan-files rifiuta soglie non valide" "$S/scan-files.sh" "$MIRROR" f5 --min-size "5M;touch $T/scan-files-injection" --ext none
+t_ok "...non esegue input di soglia come shell" test ! -e "$T/scan-files-injection"
+t_fail "scan-files rifiuta estensioni malformate" "$S/scan-files.sh" "$MIRROR" f6 --min-size 0 --ext 'pem,'
 
 echo "== dry-run (gate G3) =="
 t_fail "dry-run bloccato senza gate G3" "$S/dry-run.sh" "$MIRROR" "$T/d0" --paths paths.txt --replace repl.txt --keep keep.txt
