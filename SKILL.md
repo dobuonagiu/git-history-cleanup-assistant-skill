@@ -42,7 +42,38 @@ file segnaposto (`.gitkeep`, `.keep`, ...) **non è vuota per git** e resta: il 
 ("Cartelle rimaste con soli file segnaposto"); se l'utente vuole eliminarla aggiungi la cartella
 (es. `placeholder/`) a `paths-to-remove.txt` e rifai G3 e dry-run.
 
+## Perimetro: scegli la modalità PRIMA di iniziare (obbligatorio)
+Chiedi (o deduci dalla richiesta) il **perimetro** e dichiaralo; le regole e le fasi si applicano solo a ciò
+che rientra nel perimetro. Non estendere mai il perimetro di tua iniziativa.
+
+| Modalità | Quando | Fasi |
+|----------|--------|------|
+| **SOLO FILE** | l'utente vuole solo eliminare file/estensioni/file grandi (anche se i secret li ha già gestiti) | 0-4 (verifiche minime), **5c**, 7 (solo `paths-to-remove.txt` + `keep-list.txt`), 8-16 |
+| **COMPLETA** | bonifica di secret/dati sensibili (con o senza file) | tutte |
+
+**Modalità SOLO FILE** – regole:
+- **Saltati**: Fase 5 (scansioni secret/pattern/config), 5b (revisione semantica), 6 (classificazione A/B/C/D dei
+  secret), `replacements.txt`. Le regole 12, 13, 14 **non si applicano**: non bloccarti su blob mantenuti,
+  candidate di configurazione o revisione semantica. Non sono "non verificati": sono fuori perimetro; dillo nel
+  report finale ("secret: fuori perimetro").
+- Se esistono già `replacements.txt` approvati dall'utente in una sessione precedente, riusali tali e quali
+  (non rigenerarli né rivederli); altrimenti nessuna sostituzione.
+- **G3 ridotto**: artefatti solo `paths-to-remove.txt`, `keep-list.txt`, `cleanup-reports/pre-files.tsv`,
+  `cleanup-reports/pre-paths-suggested.txt` (+ `replacements.txt` se riusato). Non includere
+  `pre-config-candidates.tsv`, `pre-semantic-review.md`, `pre-findings.tsv`.
+- Riuso di mirror/backup/gate di sessioni precedenti: se il mirror non coincide più col sorgente, **non
+  inseguire** report e gate vecchi: rifai solo backup (G1) e scoperta file (5c) sul mirror aggiornato, poi un
+  unico G3 ridotto. Un gate è invalido solo se cambia un *suo* artefatto: non modificare artefatti dopo averli
+  inseriti in un gate; se serve, ricrea il gate **una volta** e dillo.
+- Verifica finale (13/15): file rimossi assenti, keep preservati, ref/tree attesi. Eventuali finding di secret
+  preesistenti **non bloccano** il push (sono fuori perimetro): segnalali soltanto.
+- **Anti-stallo**: dopo ogni gate approvato procedi subito alla fase successiva; al massimo un blocco per
+  gate. Quando serve un'approvazione, dai **un solo comando** `!...gate.sh approve ...` completo
+  (con `CLEANUP_REPORTS=<cartella-di-lavoro>/cleanup-reports` se non sei nella cartella di lavoro) e fermati.
+  Se l'utente scrive il comando senza `!` o fuori cartella, correggi in una frase, senza rigenerare il gate.
+
 ## Regole obbligatorie (non derogabili)
+(Le regole 4, 5, 12, 13, 14 valgono in modalità COMPLETA; vedi sopra per SOLO FILE.)
 
 1. **Mai** riscrivere la history né fare force push senza il relativo **gate APPROVATO dall'utente** (vedi Gate).
 2. **Mai** modificare i file in `cleanup-reports/gates/` né eseguire `gate.sh approve`: l'approvazione la dà
@@ -103,7 +134,15 @@ confermi di aver approvato, poi verifica con `gate.sh status` e prosegui. Non es
 Se l'utente non vuole procedere: `gate.sh reject <ID>`. Se artefatti o regole cambiano dopo l'approvazione, il
 gate va ricreato e riapprovato.
 
-Gate G3 (classificazione), da creare dopo le Fasi 6-7:
+Gate G3 SOLO FILE (dopo 5c):
+```bash
+gate.sh create G3-classificazione --title "Rimozione file" --phrase "Confermo la classificazione" \
+  --artifact paths-to-remove.txt --artifact keep-list.txt \
+  --artifact cleanup-reports/pre-files.tsv --artifact cleanup-reports/pre-paths-suggested.txt \
+  --summary "<criteri, n. file da eliminare, file preservati>"
+```
+
+Gate G3 (classificazione) COMPLETA, da creare dopo le Fasi 6-7:
 ```bash
 gate.sh create G3-classificazione --title "Classificazione e regole" --phrase "Confermo la classificazione" \
   --artifact paths-to-remove.txt --artifact replacements.txt --artifact keep-list.txt --artifact pre-findings.tsv \
@@ -149,7 +188,7 @@ presenti o non verificabili → crea G2: **fermati** finché l'utente non le rim
 Se la riscrittura tocca il branch di default (di solito sì: è antenato di tutti i branch) i ruleset sul default
 branch impediranno il push.
 
-### FASE 5 – Secret Discovery
+### FASE 5 – Secret Discovery  (solo modalità COMPLETA; 5b e 5c idem tranne 5c, che vale anche per SOLO FILE)
 `scan-secrets.sh <mirror> pre` (gitleaks + trufflehog, anche su mirror bare; valori mascherati) e
 `summarize-findings.sh <mirror> pre` (tipo, file:riga, commit, autore, gravità, valore mascherato, branch).
 `scan-patterns.sh <mirror> pre [--patterns-file F]`: contesto privato che gitleaks non vede (IP privati, PEM,

@@ -103,7 +103,7 @@ dopo l'approvazione.
 |------|--------------|-------------------|
 | G1-backup | push sul repo di backup | `Confermo il backup` |
 | G2-protezioni | dry-run, rewrite, push (se ci sono branch protection/ruleset) | `Confermo che le protezioni sono state rimosse o aggirate` |
-| G3-classificazione | dry-run | `Confermo la classificazione` |
+| G3-classificazione (in modalità SOLO FILE ha solo gli artefatti di rimozione file) | dry-run | `Confermo la classificazione` |
 | G4-riscrittura | riscrittura della history | `Confermo la riscrittura della history` |
 | G5-push | force push sul repo originale | `Confermo il force push` |
 
