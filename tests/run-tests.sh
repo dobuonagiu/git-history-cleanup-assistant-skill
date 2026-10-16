@@ -52,6 +52,8 @@ t_ok "match_paths: non confonde prefissi" absent "$T/m.out" '.env.bak'
 
 echo "== gate.sh =="
 t_fail "approve su gate inesistente rifiutato" "$S/gate.sh" approve nonexist
+t_fail "create rifiuta un artefatto inesistente" "$S/gate.sh" create GMISSING --title test --phrase "Frase di prova" --artifact "$T/missing.txt"
+t_ok "gate con artefatto inesistente non viene creato" test ! -e "$T/rep/gates/GMISSING.md"
 "$S/gate.sh" create GT --title test --phrase "Frase di prova" --artifact "$T/paths.txt" >/dev/null 2>&1
 t_ok "gate creato DA_LEGGERE" test "$(gstatus GT)" = DA_LEGGERE
 t_fail "approve senza TTY e senza --phrase rifiutato" "$S/gate.sh" approve GT

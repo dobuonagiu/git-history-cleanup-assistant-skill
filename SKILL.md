@@ -146,9 +146,11 @@ gate.sh create G3-classificazione --title "Rimozione file" --phrase "Confermo la
 Gate G3 (classificazione) COMPLETA, da creare dopo le Fasi 6-7:
 ```bash
 gate.sh create G3-classificazione --title "Classificazione e regole" --phrase "Confermo la classificazione" \
-  --artifact paths-to-remove.txt --artifact replacements.txt --artifact keep-list.txt --artifact pre-findings.tsv \
+  --artifact paths-to-remove.txt --artifact replacements.txt --artifact keep-list.txt \
+  --artifact cleanup-reports/pre-findings.tsv \
   --artifact cleanup-reports/pre-files.tsv --artifact cleanup-reports/pre-paths-suggested.txt \
-  --artifact cleanup-reports/pre-config-candidates.tsv --artifact cleanup-reports/pre-semantic-review.md \
+  --artifact cleanup-reports/pre-config-candidates.tsv --artifact cleanup-reports/pre-semantic-scope.md \
+  --artifact cleanup-reports/pre-semantic-review.md --artifact cleanup-reports/pre-rules-preflight.md \
   --summary "<riepilogo: criteri dimensione/formato, candidati esclusi, cosa verrà eliminato/sostituito/preservato>"
 ```
 
@@ -160,6 +162,18 @@ protezioni: `references/branch-protection.md`; report finale: `references/report
 Stato in `./cleanup-reports/state.env`. La sessione può essere ripresa: `backup-mirror.sh` riusa il mirror
 esistente (se coincide ancora col sorgente) e i gate già approvati e invariati restano validi. Non cancellare
 mirror o gate a mano per "ripartire": se il sorgente è cambiato lo script lo dice.
+
+### Ripresa dopo un'interruzione
+Prima di ripetere una fase, ricostruisci lo stato dalla cartella di lavoro esistente: leggi le chiavi pertinenti
+di `cleanup-reports/state.env`, esegui `gate.sh status` e verifica mirror, report e relativi timestamp. Non
+dedurre che una fase sia conclusa dal solo messaggio precedente dell'assistente, né che sia incompleta perché
+manca una risposta finale. Riusa report validi e approvazioni i cui artefatti non sono cambiati; ripeti solo
+passaggi mancanti o invalidati da uno snapshot del sorgente cambiato. Non cancellare mirror, report o gate e non
+ricreare un gate approvato senza una ragione verificabile.
+
+Le scansioni completate non equivalgono alla revisione/classificazione: in modalità COMPLETA, inventario
+semantico e finding devono essere esaminati e classificati prima di G3. Dopo un gate approvato prosegui dalla
+prima fase realmente incompleta, mantenendo gli stessi perimetro, criteri e decisioni già confermati.
 
 ## Workflow
 

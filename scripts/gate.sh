@@ -50,6 +50,9 @@ case "$cmd" in
       esac
     done
     [ -n "$phrase" ] || die "--phrase obbligatoria"
+    for a in "${arts[@]}"; do
+      [ -e "$a" ] || die "Artefatto del gate inesistente: $a"
+    done
     f="$(gate_file "$id")"; real="$f"; f="$f.new"
     {
       echo "---"
