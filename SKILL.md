@@ -67,7 +67,7 @@ che rientra nel perimetro. Non estendere mai il perimetro di tua iniziativa.
   inseriti in un gate; se serve, ricrea il gate **una volta** e dillo.
 - Verifica finale (13/15): file rimossi assenti, keep preservati, ref/tree attesi. Eventuali finding di secret
   preesistenti **non bloccano** il push (sono fuori perimetro): segnalali soltanto.
-- **Anti-stallo**: dopo ogni gate approvato procedi subito alla fase successiva; al massimo un blocco per
+- **Anti-stallo** (vale anche in modalità COMPLETA): dopo ogni gate approvato procedi subito alla fase successiva; al massimo un blocco per
   gate. Quando serve un'approvazione, dai **un solo comando** `!...gate.sh approve ...` completo
   (con `CLEANUP_REPORTS=<cartella-di-lavoro>/cleanup-reports` se non sei nella cartella di lavoro) e fermati.
   Se l'utente scrive il comando senza `!` o fuori cartella, correggi in una frase, senza rigenerare il gate.
@@ -81,8 +81,9 @@ che rientra nel perimetro. Non estendere mai il perimetro di tua iniziativa.
    Se un gate non è APPROVATO **fermati**.
 3. **Prima** di qualsiasi modifica crea sempre un backup completo (mirror) e verificalo.
 4. Dopo ogni bonifica **riesegui** la scansione dei secret.
-5. Se trovi credenziali, ricorda sempre che vanno considerate **compromesse** e **rigenerate** (e ruotate per
-   prime): la riscrittura non le rende di nuovo sicure (cache, fork, cloni, CI log).
+5. Se trovi credenziali, ricorda sempre che vanno considerate **compromesse** e **rigenerate**: la
+   riscrittura non le rende di nuovo sicure (cache, fork, cloni, CI log). Se l'utente sceglie di ruotarle a fine
+   processo, procedi comunque e **ricordaglielo alla fine** (Fase 16 e risposta finale); non bloccare i gate.
 6. Mai stampare valori dei secret in chiaro (gli script li mascherano). I report stanno in `./cleanup-reports/`
    e non vanno mai committati.
 7. Lavora sempre su un mirror di lavoro, **mai sul backup**. Il backup resta intatto.
@@ -239,6 +240,21 @@ o accettare la modifica (`--allow-keep-modified`). Un `paths-to-remove.txt` senz
 Crea il gate G3 includendo anche `pre-files.tsv` e `pre-paths-suggested.txt` come artefatti di classificazione
 (vedi sopra) e attendi l'approvazione.
 
+**Preflight delle regole (obbligatorio prima di G3, evita cicli G3→dry-run→G3)**: nelle sessioni reali G3 è stato
+ricreato più volte per regole scoperte difettose o decisioni mancanti *dopo* l'approvazione. Prima di creare G3:
+1. **Decisioni in un'unica domanda** (`ask_user`): per ogni categoria ambigua (endpoint/host interni, identificatori
+   JWT/tenant/client-id, URL di workflow/CI, nomi reali, file di esempio/test) chiedi in blocco azione (A/B/C/D) e
+   sostituto, indicando l'impatto operativo (build, CI, riconfigurazione). Non emergere una categoria alla volta.
+2. **Verifica a secco delle sostituzioni** sull'intero inventario dei blob distinti (Fase 5b): ogni regola deve
+   (a) corrispondere ad almeno un blob, (b) essere idempotente (il sostituto non è riabbinato da nessuna regola),
+   (c) non produrre sintassi rotta (virgolette/apici duplicati, JSON/YAML/XML/properties non più validi: riparsa i
+   file strutturati modificati), (d) non toccare file in keep-list se non voluto. Allega al gate il report
+   (es. `cleanup-reports/pre-rules-preflight.md`: regola → n. blob/file, esempio prima/dopo mascherato).
+3. **Raggruppa le correzioni**: se dopo dry-run o rewrite locale serve cambiare le regole, raccogli *tutte* le
+   correzioni in un solo ciclo e ricrea G3 **una volta**, dichiarando cosa è cambiato e perché; poi dry-run e G4.
+4. **Credenziali**: la rotazione può essere fatta dall'utente a fine processo; non bloccare gate, riscrittura
+   o push per questo. Tieni traccia delle credenziali compromesse trovate e ricordale alla fine (Fase 16).
+
 ### FASE 8 – Impact Analysis
 Il dry-run produce `dryrun-report.md`: file eliminati, file il cui contenuto cambia, commit, branch e tag
 riscritti, avviso se il **branch di default** viene riscritto.
@@ -282,7 +298,9 @@ un'esposizione **residua** (richiesta al supporto del provider), non un errore d
 
 ### FASE 16 – Checklist finale
 - Riattivare le branch protection / ruleset.
-- **Rigenerare tutte le credenziali esposte**.
+- **Promemoria esplicito all'utente: rigenerare/ruotare tutte le credenziali esposte** (elenco per tipo/sistema,
+  senza valori). Se la rotazione è stata rimandata a fine processo, è questo il momento: ripetilo anche nella
+  risposta finale e nel report.
 - Eliminare il repo di backup e la cartella di lavoro (contengono i secret originali).
 - Avvisare il team: nuovo clone obbligatorio. Chiudere/ricreare le PR impattate.
 
